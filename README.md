@@ -11,12 +11,19 @@
 - Run **`.\build.ps1`**. It auto-detects your game install; override with `-InstallDir <path>`,
   the `SK_INSTALL_DIR` env var, or `install_dir=` in config.properties. It should output
   `sk-utils-mod.zip`.
+- The mod **auto-heals itself between SK game updates**, so *all you need to
+  do in most cases* is **rebuild it using `build.ps1` and load the new `sk-utils-mod.zip` into KL as a mod.**
 - To pass the source on, run **`.\package-source.ps1`** → `sk-utils-src.zip`. It packs an
   explicit include list (sources, build scripts, multibox.py, config template, README).
 
 ---
 
 ## -1. A little backstory and some words of warning
+
+**UPDATE: For the last time! This mod is on *LIFE SUPPORT*. I won't be finishing the FSC routine for autopilot,
+I won't be adding autopilot for random floor layouts, and I won't be adding Mac support. Geez, people.**
+If there are any genuine bugs or problems with the mod *then* open an issue on the Github. 
+
 
 If you're reading this, well, you've decided to take a look at this weird little mod!
 This started out as a modest little project meant to have my alts follow me around when I was farming
@@ -73,11 +80,16 @@ The only way you get banned is if you attract enough attention for a dev/GM to *
 - When running missions on full-auto, the bot reads routine files from
   `~/.sk-utils/routines/` folder (and `prop_masks/` if present). The mod ships with a few default
   routines that I used to use (Axes of Evil, Snarby, Beyond Axes of Evil for when mirrored farming was briefly a thing).
-  The RJP and FSC routines in the routines folder were *never finished*; I determined FSC to be beyond feasibility.
-  As for RJP, I just got lazy.
+
+  The RJP and FSC routines in the routines folder were *never finished*.
+
+  Just so I don't have to answer this again in DMs, **I couldn't get full-auto FSC to work, and no, I
+  will not be returning to do more dev work on this, lol. If you want it please try and figure it out yourself.**
+  As for RJP, I just got lazy. :P
   
   Feel free to develop your own autopilot routines!
-  **Where they go:** the source package ships a `.sk-utils/` folder — copy it into your user
+
+  **Where they go:** the source package ships a `.sk-utils/` folder. Copy it into your user
   folder as `~/.sk-utils` (i.e. `C:\Users\<you>\.sk-utils`) before first launch; it carries the
   routines, prop masks, auction watch table and a config template.
 
@@ -130,12 +142,13 @@ scheme under §8).
 Still making crowns too slow? I got you...carry on the Prince of Krogmo's legacy. Who decided that
 mod calibrators should cost so damn much anyways?
 
-Hands-free PvP payout farming. Every account, main included, queues team Blast Network, plays,
-returns to the ready room and requeues — forever. Once a match is live the rig kicks in: the
-losing side (the team opposite the main — or, when exactly three clients are fully kitted with
-Krogmo Coin boosters, the team opposite that pair) places a bomb on itself and quits, feeding
-the win, while a nudged movement key keeps the main from idling out. Toggle off to stop
-managing; it won’t withdraw a signup already sitting in the queue.
+Hands-free PvP payout farming. All four accounts, main included, queue team Blast Network, play,
+return to the ready room and requeue until you toggle this mode off.
+
+Once a match is live the rig kicks in: the losing side (the team opposite the main — or, when
+exactly three clients are fully kitted with Krogmo Coin boosters, the team opposite that pair)
+places a bomb on itself and quits, feeding the win, while a nudged movement key keeps the main
+from idling out.
 
 ---
 
@@ -155,8 +168,9 @@ Mirrored Lockbox | 200k
 
 `Ctrl+E` with `multibox.py` open toggles **LIVE mode**: while on it sweeps the AH every few seconds and
 **spends real crowns** — buys any matching buyout at or under your cap, and bids up to the cap on bid-only
-listings (re-bidding when outbid). Finds are logged to `~/.sk-utils/auction_finds.log`. When
-a rule won’t match, `Ctrl+U` dumps every item’s display name + config name to
+listings (re-bidding when outbid). Finds are logged to `~/.sk-utils/auction_finds.log`.
+
+If you're having trouble getting matches for your item, `Ctrl+U` dumps every item’s display name + config name to
 `~/.sk-utils/item_configs.txt` — variants often come last in config names (“Shadow Valiant Visor”
 is `...Valiant Visor, Shadow`, for example).
 
@@ -204,7 +218,9 @@ of your choice fully hands-free. Now go and be free. (and restart your clients e
      Catalyst** at 14→15, 49→50, and 89/94/99. Items are found by config name in each
      character's own inventory — keep foods and catalysts stocked; a missing item pauses
      that sprite's feeding and warns in chat once per session.
+
      **NOTE: Evo catalyst feeding is a little buggy atm.** You might have to do those levels manually.
+
      **NOTE 2: I only ever used this with autofeeding my Drakons.** No clue if it works with other pets, probably not.
 
 **Auto-abort (relaunch a fresh mission)** fires on any of:
