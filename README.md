@@ -50,6 +50,7 @@ The only way you get banned is if you attract enough attention for a dev/GM to *
 ---
 
 ## 0. Install & configure
+- **Download this zip folder**, which contains the source code for the mod.
 - **Run `build.ps1`. This will produce `sk-utils-mod.zip`. That is what you want to put into Knight Launcher.**
 - Before you boot the game up with the mod, **set the `main_account` variable in `~/.sk-utils/config.properties`**.
 - The `/.sk-utils/` subfolder that ships with the mod **goes in your Users/YourWindowsUsername/ folder.** It has some of my
@@ -107,6 +108,7 @@ toggle unless noted.
 ## 2. Manual play — auto-follow (`Ctrl+F`)
 
 You're playing the game, dragging some alts on bk/spikes farm, but it's just a little too slow...got it.
+
 `Ctrl+F` toggles auto-follow, which makes your alts mirror your every move. While it’s on, every alt:
 
 - follows the main, with a catch-up dash when it falls far behind;
@@ -125,8 +127,9 @@ scheme under §8).
 
 ## 3. Blast Network auto-queue (`Ctrl+Q`)
 
-Still making crowns too slow? I got you...carry on the Prince of Krogmo's legacy.
-Who decided that mod calibrators should cost so damn much anyways?
+Still making crowns too slow? I got you...carry on the Prince of Krogmo's legacy. Who decided that
+mod calibrators should cost so damn much anyways?
+
 Hands-free PvP payout farming. Every account, main included, queues team Blast Network, plays,
 returns to the ready room and requeues — forever. Once a match is live the rig kicks in: the
 losing side (the team opposite the main — or, when exactly three clients are fully kitted with
@@ -140,6 +143,7 @@ managing; it won’t withdraw a signup already sitting in the queue.
 
 This one's for the actual greedy bastards. I never really used this one much.
 Snatching stuff from people who want it was always a little too evil for my tastes, but the gun is in your hands now.
+
 AH sniper that runs from anywhere. Rules live in
 `~/.sk-utils/auction_watch.txt` (seeded on first use, re-read before every sweep, no rebuild):
 
@@ -179,9 +183,10 @@ is `...Valiant Visor, Shadow`, for example).
 ## 6. Autopilot (`Ctrl+R`)
 
 Too lazy to even play the game? Should've figured as much, you wouldn't be here otherwise. ;)
-`Ctrl-R` toggles full-auto mode, which takes your goons and runs them through a mission/floor
+
+`Ctrl-R` toggles full autopilot mode, which takes your goons and runs them through a mission/floor
 of your choice fully hands-free. Now go and be free. (and restart your clients every 8-12 hrs or so
-, SK's memory leak isn't something I could fix.)
+, SK's memory leak isn't something I can fix.)
 
 1. The hotkey `Ctrl+R` toggles endless cycling of the mission defined in `active_mission.txt`,
   which in turn lives in  `~/.sk-utils/routines/` (more talk on this folder later).
@@ -445,7 +450,7 @@ that obstruct the path as they come into range.
 
 ### Note on ghost blocks
 
-Shooting a `Block/Ghost` destroys every block connected to it, opening a gate that can be a
+Shooting a `Block/Ghost` destroys every block connected to it, opening up a new path that can be a
 long winding wall. There is **no dedicated command** to handle this. Any moving step opens one
 for you, because the block-clearing behavior treats a ghost block within 4 tiles as a target
 *regardless of whether it sits on the path*.
