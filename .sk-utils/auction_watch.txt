@@ -1,0 +1,19 @@
+# sk-utils auction watch table — re-read on every scan, no rebuild needed.
+#
+#   <name substring> | <max buyout in crowns> | <exclusion, exclusion, ...>
+#
+# Matching is case-insensitive substring on the listing's item name.
+# Prices accept 100000, 100,000 or 100k. '#' starts a comment.
+
+Aura             | 175k | Haunted Aura, Ghostly Aura, Slimed Aura, Harvester Aura, Snowfall Aura, Sunshine Aura
+Mirrored Lockbox | 200k
+Wings            | 100k | Slime Wings, Ankle Wings, Swing Wings, Helm Wings, Mecha Wings
+Frenzy           | 100k | Confetti, Crest
+Polar Warden Coat | 400k
+Polar Wolf Coat | 400k
+Valiant Visor, Shadow | 150k
+Rogue Lite Cuirass, Shadow | 175k
+Heat Bonus (30 days) | 75k
+Silver Key | 10k
+Airbraker | 180k
+Chaff Pack | 120k

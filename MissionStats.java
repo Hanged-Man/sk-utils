@@ -7,7 +7,7 @@ import java.net.DatagramSocket;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Mission stats logger for the endless cycle → ~/.sk-utils/mission_stats.jsonl (one JSON
+ * Mission stats logger for autopilot mode → ~/.sk-utils/mission_stats.jsonl (one JSON
  * line per attempt: ts/status/runtime_ms/crowns/deaths/floor/reason). MAIN-only; extracted
  * from SocketInputState (same package — leans on its package-private helpers). Lifecycle:
  * SIS's startRoutineForCurrentFloor calls missionStart() at the lobby and markAllOnFloor1()
@@ -68,13 +68,9 @@ public class MissionStats {
     private static volatile long missionSeq = 0L;
     private static volatile long crownSnapBeforeSeq = -1L;
     private static volatile int auctionSpentAtStart = 0; // AuctionBot spend at mission start
-    private static final long CROWN_REPLY_WINDOW_MS = 2000L; // was 1000; a loading alt needs longer than that
+    private static final long CROWN_REPLY_WINDOW_MS = 2000L;
     private static long deathLastCheckAt = 0L;             // throttle: when the death watch last sampled the party health
     private static final long DEATH_CHECK_INTERVAL_MS = 1000L; // 1Hz — both abort triggers below are 10s DWELL timers, so edges no longer matter
-    // MAIN DOWN — the party-wipe detector's shape applied to the main alone (user-directed
-    // 2026-08-05, REPLACING the died-2x edge counter: a >0→0 edge was missable whenever an
-    // alt-stack revive landed between samples, so the abort "frequently failed to trigger").
-    // A dwell timer has no edge to miss — and a main revived quickly needs no abort at all.
     private static long mainDownSince = 0L;                // when the main was first seen down (0 = up)
     private static final long MAIN_DOWN_ABORT_MS = 10000L; // main at 0 hp this long => abort + relaunch
     private static final String MISSION_STATS_FILE = SocketInputState.DIR + "/mission_stats.jsonl";
@@ -89,9 +85,6 @@ public class MissionStats {
         missionDeaths = 0; // tickDeathWatch counts from here until missionEnd
         partyWipeSince = 0L;
         mainDownSince = 0L;
-        // Re-resolve the main's playerOid EVERY mission (kept from the reverted rework —
-        // one line, real bug): PlayerObject._oid changes on reconnect, and a stale cached
-        // oid would blind the main-down detector exactly as it blinded the old counter.
         ownPlayerOid = -1;
         auctionSpentAtStart = AuctionBot.spentThisSession; // auction buys come out of the same wallet
         SocketInputState.broadcastAll("DMGRESET 1"); // zero every client's HUD damage tally for the new mission
@@ -130,14 +123,7 @@ public class MissionStats {
         final int before = missionCrownsBefore;
         final int deaths = missionDeaths;
         final String st = status, fl = floor, rs = reason;
-        // Captured HERE, on the tick thread, so an abort's immediate relaunch (whose own
-        // CrownsBefore snapshot starts within milliseconds) cannot swap this run's
-        // baseline out from under the logging thread.
         final CrownSnap snapBefore = crownSnapBefore;
-        // A baseline from an EARLIER attempt would make this run's delta span two
-        // missions (and read as roughly double) while the counts and responder sets both
-        // looked perfect. Refuse to report crowns rather than publish a number we know
-        // is not comparable.
         final boolean baselineIsOurs = (crownSnapBeforeSeq == missionSeq);
         new Thread(() -> {
             CrownSnap snapAfter = snapshotPartyCrowns();
@@ -183,19 +169,13 @@ public class MissionStats {
         }, "SK MissionLog").start();
     }
 
-    /** Party crown total = this client's own `crowns` + every alt's, gathered by a UDP
-     *  CROWNQUERY/CROWNREPLY round-trip (~1s window). MUST run off the tick thread. */
     /**
      * Party crown total: this client's own balance plus one reply per ALT, gathered by
      * a UDP CROWNQUERY/CROWNREPLY round trip. MUST run off the tick thread.
      *
      * <p>Replies are keyed by the replying client's listener port, so a duplicate can't
-     * double-count and — the point — the SET of responders is known. Anonymous sums hid
-     * a real failure: an alt absent from BOTH the before and after snapshots (crashed,
-     * still loading, reply lost) simply dropped its earnings out of the delta, leaving a
-     * total that was positive, plausible and 2-3k light. {@link #lastCrownSources} carries
-     * the responder count out so missionEnd can compare the two snapshots and flag it.
-     *
+     * double-count and — the point — the SET of responders is known. {@link #lastCrownSources}
+     * carries the responder count out so missionEnd can compare the two snapshots and flag it.
      * <p>Returns as soon as every expected alt has answered, so the common case is fast;
      * otherwise it waits out the deadline.
      */

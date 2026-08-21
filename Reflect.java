@@ -4,21 +4,11 @@ import java.util.Locale;
 
 /**
  * Shared reflection + actor-perception primitives, extracted from SocketInputState
- * (2026-08-05, decomposition phase 1). ONE copy for the whole mod: SocketInputState,
+ * ONE copy for the whole mod: SocketInputState,
  * MissionStats, PvpAutoQueuer, DamageMeter and SpriteFeeder all read through here —
  * the per-file private copies these replaced are gone.
  *
- * NOT referenced by any Patcher-injected template (verified against every injection
- * site in the 2026-08-05 decomposition survey), so nothing here is name-pinned by
- * injected bytecode; members are package-private statics.
  *
- * NOT to be confused with modutils' ClassFinder/MemberFinder: those are BUILD-TIME
- * tooling — they run in the Patcher's JVM over the game JAR via Javassist and emit
- * the discovered names into MappingsNames; they never ship in the mod zip. This
- * class is the RUNTIME side — java.lang.reflect over LIVE game objects inside the
- * client, mostly consuming the names modutils discovered. They cannot merge: the
- * build compiles modutils BEFORE the Patcher generates MappingsNames, which this
- * class needs, and each side's classpath (Javassist vs game jar) excludes the other.
  */
 final class Reflect {
 

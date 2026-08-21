@@ -1,0 +1,2 @@
+sovereign_slime 2 HARD
+3 | Construct, Undead, Fiend

@@ -1,0 +1,11 @@
+# Arsenal Zone stations (Dynamic/Misc/Arsenal/Arsenal Zone).
+# The prop reads collFlags=0, but the station is solid: the centre row (incl.
+# the centre tile itself) plus the back row (Y+1) are collidable; only the row
+# in front stays open.
+match=arsenal/arsenal zone
+-1 0
+0 0
+1 0
+-1 1
+0 1
+1 1

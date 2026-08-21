@@ -13,11 +13,6 @@ import java.util.Locale;
 /**
  * Auction-house sweeper — SEARCH AND REPORT ONLY (no bidding, no buying).
  *
- * <p>Deliberately SELF-CONTAINED so it can be lifted out into a standalone mod: it
- * touches the rest of sk-utils only through {@link SocketInputState#debugFile} and a
- * one-line trigger hook. Everything it needs from the game is resolved by reflection
- * at call time, so nothing here is wired into the mod's Mappings/Patcher plumbing.
- *
  * <p><b>How the game does an auction search</b> (decompiled from
  * {@code auction.client.SearchPanel}):
  *
@@ -310,12 +305,6 @@ public final class AuctionBot {
         searchCls.getField("all").setBoolean(s, false);
         searchCls.getField("featured").setBoolean(s, false);
         searchCls.getField("ascending").setBoolean(s, true);
-        // Sort by BID_PRICE, not BUY_PRICE. Sorting by buyout price makes the server
-        // return ONLY listings that HAVE a buyout — a bid-only listing (buyPrice 0, the
-        // seller offered no buyout) has no buy-price key and is omitted from results
-        // entirely, so the sweep never saw them (user-reported 2026-08-07). EVERY listing
-        // has a bid price (there is always a current/starting bid), so BID_PRICE surfaces
-        // both kinds; the per-listing logic still buys any affordable buyout.
         @SuppressWarnings({ "unchecked", "rawtypes" })
         Object sort = Enum.valueOf((Class) Class.forName(SORT_CLASS), "BID_PRICE");
         searchCls.getField("sort").set(s, sort);
@@ -460,8 +449,8 @@ public final class AuctionBot {
     /**
      * Writes every item in the game to {@code ~/.sk-utils/item_configs.txt} as
      * {@code <display name><TAB><config name>}, sorted by display name — a lookup table
-     * for writing watch rules, since an item's config path rarely reads like its in-game
-     * name ("Shadow Valiant Visor" is {@code Costume/Helm/Lite/Valiant Visor, Shadow}).
+     * for writing watch rules, since an item's config path doesn't always read like it's in-game
+     * name.
      */
     public static void dumpItemCatalog(Object ctx) {
         java.util.ArrayList<String[]> catalog = allItemConfigs(ctx);

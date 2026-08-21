@@ -1,0 +1,2 @@
+king_of_ashes 1 HARD
+hazard_configs=generic marker

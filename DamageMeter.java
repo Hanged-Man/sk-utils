@@ -8,22 +8,13 @@ import com.threerings.opengl.renderer.Color4f;
 import com.threerings.opengl.util.d;
 
 /**
- * "DPS Breakdown" card — per-player mission damage, styled after the game's gear-tooltip
- * stat parts (ui/window/tooltip_parts). Styling goes through Clyde's OWN pipeline:
- * we build real-named {@link StyleConfig} objects mirroring the vanilla stat_bar.dat /
- * container_stats.dat styles exactly (nine-sliced backings, TILE_X hashmarks, Arial
- * stat-text colors) and hand them to {@code setStyleConfigs} — so fonts/colors/backings
- * apply and SURVIVE style validation (unlike raw setBackground, which validation
- * clobbers). Bars fill by each knight's SHARE of the party total; numbers use k/M.
+ * "DPS Breakdown" card — per-player mission damage. damage bars fill by each knight's SHARE of the party total; numbers use k/M.
  *
- * <p>Deliberately self-contained for a future standalone release. Data source: the
- * PartyObject$DamageEvent tap — every client receives every member's events; we
- * replicate the game's render filter (name=="damage" AND _sourceId == own pawn actor
- * id). Totals shared via DMGSTAT broadcasts every ~2s, reset whenever THIS client
- * enters a new dungeon instance (dungeonClient repoint — covers manual play) and via
- * the campaign's DMGRESET broadcast
- * (MissionStats.missionStart); SocketInputState forwards those two UDP messages and
- * lends its socket. Lives in its own Patcher-generated click-transparent overlay
+ * Totals shared via DMGSTAT broadcasts every ~2s, reset whenever THIS client
+ * enters a new dungeon instance and via
+ * the campaign's DMGRESET broadcast (MissionStats.missionStart); SocketInputState
+ * forwards those two UDP messages and lends its socket.
+ * Lives in its own Patcher-generated click-transparent overlay
  * window (DamageMeterWindow), anchored halfway down the screen's right edge;
  * visibility follows the ` HUD toggle.
  */
@@ -84,9 +75,6 @@ public class DamageMeter {
         int me = myPawnId;
         if (me == 0 || sourceId != me)
             return;
-        // No per-hit logging: this fires on every damage tick of every fight and buried
-        // the rest of debug.log. The meter is confirmed working; if it ever needs
-        // re-verifying, log the running total on a timer rather than per event.
         ownMissionDamage += amount; // single writer (this client's event thread)
     }
 
@@ -270,7 +258,7 @@ public class DamageMeter {
     private static void refresh() {
         // Only knights actually IN the dungeon with me — DMGSTAT broadcasts arrive
         // from every logged-in client, so filter by my party roster (no bars for
-        // alts idling at the login screen / in town).
+        // alts in readyroom / Haven).
         java.util.HashSet<String> roster = partyNames();
         java.util.List<java.util.Map.Entry<String, Long>> es =
                 new java.util.ArrayList<java.util.Map.Entry<String, Long>>();

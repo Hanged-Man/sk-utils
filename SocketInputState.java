@@ -8143,22 +8143,14 @@ public final class SocketInputState {
     // position (loading screen, no pawn, no scene AT ALL) does NOT reset the timer —
     // a client wedged without a pawn is exactly a state to recover from; a NORMAL
     // between-floors load resolves to a far-away position, which re-anchors on
-    // arrival. 3 minutes without movement while the cycle is on can never be
+    // arrival. 2 minutes without movement while the cycle is on can never be
     // legitimate (every stationary wait — gathers, forge hold, buttons — is bounded
     // well under a minute), so it aborts + relaunches. Fires at most once per window
-    // (the fire re-seeds the timer, giving each recovery attempt a fresh 3 minutes).
-    //
-    // CALLED FROM THE PATCHED InputState.poll (user: trigger NO MATTER WHERE the
-    // main is, dungeon or not) — the poll runs every GUI frame in every state:
-    // Haven, ready room, mission lobby, loading screens, even a scene that never
-    // finishes loading. The TudeyController tick (tickCampaign's host) only runs
-    // while a scene ticks, so a watchdog there could never see the worst wedges.
-    // Poll and tick share the client's single main-loop thread, so campaignAbort's
-    // service calls are as safe here as from tickCampaign.
+    // (the fire re-seeds the timer, giving each recovery attempt a fresh 2 minutes).
     private static float mainIdleX = 0f, mainIdleY = 0f; // last anchored main position
     private static long mainIdleSince = 0L;              // when it was anchored (0 = re-seed)
     private static final float MAIN_IDLE_EPS_SQ = 0.25f;      // (0.5 tile)^2 — less = "hasn't moved"
-    private static final long MAIN_IDLE_TIMEOUT_MS = 120000L; // 2 minutes (user-set; was 3)
+    private static final long MAIN_IDLE_TIMEOUT_MS = 120000L; // 2 minutes
 
     /** Delegate so the injected poll needs no AuctionBot stub — see AuctionBot.java. */
     public static void tickAuctionBot() {
@@ -8213,13 +8205,7 @@ public final class SocketInputState {
         try {
             if (!campaignActive)
                 return;
-            // (The idle dead-man's switch is NOT here: tickCampaign only runs while a
-            // tudey scene ticks. It lives in the patched InputState.poll — every GUI
-            // frame, scene or no scene — see tickMainIdleWatch.)
             if (campaignRestartPending) {
-                // Launch cycle (town/ready-room → relaunch → fresh lobby). Uses _cachedCtx,
-                // so it runs even when there's no dungeon controller yet (checked first, so a
-                // null controller in the ready room doesn't short-circuit it).
                 tickCampaignRestart();
                 return;
             }
@@ -8229,10 +8215,7 @@ public final class SocketInputState {
             if (floorKey == null || floorKey.equals(campaignLastFloor))
                 return; // scene hasn't settled onto a NEW floor yet
             // Fresh floor, routine not started yet: clear any STALE movement keys carried over
-            // from the previous floor. The DOWN key set survives scene transitions, so a main
-            // that descends the lobby elevator SOLO (lobby-bug bypass) arrives still holding its
-            // move-to-elevator keys and would run off endlessly here — nothing drives it until its
-            // routine starts. Runs every tick until this floor's routine begins, so it stays put.
+            // from the previous floor.
             clearMovementKeys();
             Object view = Reflect.readObjectFieldNullable(controller, MappingsNames.VIEW_FIELD);
             int loaded = (view == null) ? 0 : countDungeoneers(view);
@@ -8271,10 +8254,6 @@ public final class SocketInputState {
             // floor transition the roster is already full while actors are still loading, so a
             // roster-only gate would start too early.
             boolean ready = (loaded >= CAMPAIGN_PARTY_SIZE && roster >= CAMPAIGN_PARTY_SIZE);
-            // MISSION-LOBBY JOIN-BUG backup: if the alts can't join in the lobby, the roster stays
-            // stuck at just the main (distinct from "joined but still loading", which grows it).
-            // After CAMPAIGN_LOBBY_BUG_MS of roster==1 in the lobby, start solo — the main descends
-            // to floor 1 where the alts CAN join and the gate above then waits for them.
             if (!ready && floorKey.contains(CAMPAIGN_LOBBY_KEY)) {
                 if (roster == 1) {
                     if (lobbyBugSince == 0L)
@@ -8324,10 +8303,7 @@ public final class SocketInputState {
             if (!startRoutineForCurrentFloor()) {
                 // No routine for this floor while CYCLING = the run is over — we descended past
                 // the floors this mission has routes for (a partial run's last ELEVATOR, or a
-                // floor not authored yet). ABORT so it RELAUNCHES; the old behaviour set
-                // campaignActive = false, which killed the cycle silently and, worse, left every
-                // campaignActive-gated watchdog disarmed while whatever was still running kept
-                // running. Never stop the campaign here — that decision belongs to Ctrl+R.
+                // floor not authored yet). ABORT so it RELAUNCHES.
                 campaignAbort("no routine for floor '" + floorKey + "' — run complete, relaunching");
             }
         } catch (Exception e) {
@@ -8381,16 +8357,13 @@ public final class SocketInputState {
                     return;
                 }
                 if (campaignTownSince == 0L) {
-                    campaignTownSince = now; // reached town (Haven) — start the settle
+                    campaignTownSince = now; // reached Haven — start the settle
                     campaignTownSettleMs = randRangeMs(CAMPAIGN_TOWN_SETTLE_MIN_MS, CAMPAIGN_TOWN_SETTLE_MAX_MS);
                     debugFile("[campaign] back in town — settling " + campaignTownSettleMs + "ms before relaunch");
                     return;
                 }
                 if (now - campaignTownSince < campaignTownSettleMs)
                     return;
-                // Launch directly from wherever town dropped us — the invite-based lobby
-                // fill pulls the alts into the fresh lobby regardless of where anyone is
-                // (the old pre-launch ready-room hop is gone).
                 try {
                     Mappings.launchMission(ctx, campaignMissionId, campaignDifficulty, true, true, true);
                     campaignRelaunchAt = now;
@@ -8506,17 +8479,6 @@ public final class SocketInputState {
         return false;
     }
 
-    // COMBAT-PHASE BOUND (user-directed 2026-08-05 after a 58-minute stall): a combat wait
-    // that never clears is invisible to every other failsafe — the orbit IS movement (so the
-    // no-progress and idle watchdogs keep re-seeding), and the wipe/main-down detectors need
-    // knights DEAD, while an unwinnable fight can keep everyone alive for an hour. This is
-    // the gap the removed blanket 5-minute step cap used to cover, re-covered here as a
-    // TARGETED bound: no legitimate fight approaches 4 minutes (axes fights clear in
-    // seconds; a full PLATFORM arena is 1-2 min), so expiry means the fight cannot be won
-    // (unreachable/unkillable enemy, runaway spawner). Scope: the combat WAIT subs of
-    // COMBAT/COMBATLOOT/ATTACKMOVE/PLATFORM only — SNARBY has its own exit machinery, and
-    // every non-combat step keeps its own bound. Clock = routineSubStart (stamped by
-    // routineSetSub on entering the wait sub), so path-in time doesn't count.
     private static final long COMBAT_PHASE_MAX_MS = 240000L; // 4 min in ONE combat wait => abort + relaunch
 
     /** True (after firing the abort) when the current combat wait has exceeded its bound. */
@@ -8603,17 +8565,12 @@ public final class SocketInputState {
         // Terminal = the last non-lobby floor: the numFloors-th one (campaignFloorSeq was bumped
         // when this floor's routine started). Mission-agnostic — no floor NAME is hardcoded.
         boolean terminalDone = (campaignNumFloors > 0 && campaignFloorSeq >= campaignNumFloors);
-        // Diagnostic (opt-in): re-capture the post-completion reward screen tree.
         if (terminalDone && windowDiag)
             armWindowDump();
         if (terminalDone)
             MissionStats.missionEnd("SUCCESS", campaignLastFloor, null); // boss floor cleared — log the attempt
         if (campaignActive) {
             if (terminalDone) {
-                // ENDLESS CYCLE: don't stop. The mission auto-advances everyone to town
-                // in ~15s; then (in town, launch-capable) the main relaunches the mission
-                // privately on Elite, the alts auto-join, the fresh lobby loads, and the
-                // campaign restarts. tickCampaignRestart drives it; loops until Ctrl+R off.
                 campaignRestartPending = true;
                 campaignRestartPhase = 0;
                 campaignTownSince = 0L;
@@ -8627,34 +8584,6 @@ public final class SocketInputState {
         }
     }
 
-    // Sprite ability 1 on a timer during combat steps (user-directed): COMBAT, COMBATLOOT
-    // and PLATFORM's arena. Reuses the MANUAL hotkey path exactly — the main's poll sends
-    // `broadcast("SPRITE 0")` + `pendingSpriteSlot = 0` for its own client, and the tick
-    // gate picks the flag up on every account — so this needs no new plumbing and the alts
-    // fire the same ability. AIM IS UNTOUCHED: every client's combat bot is already facing
-    // its own closest enemy, which is where the ability goes.
-    //
-    // FREE-RUNNING across steps (deliberately NOT reset in routineResetStepState): the
-    // cadence is "every 18s", not "18s into each combat command" — resetting per step would
-    // re-fire at the start of every fight, and the interval sits just under the ability's
-    // own cooldown.
-    //
-    // THE CLOCK RE-ARMS ON THE CAST, NOT THE REQUEST (fixed 2026-08-05 — user: "fails to
-    // fire even though 19s have elapsed since the last fire"). It used to advance
-    // combatSpriteNextAt when the REQUEST was raised; a request that then died unfired
-    // (fight ended before the aim gate passed, the 15s giveup, the floor-end cleanup)
-    // silently consumed the whole 18s window, so the next fight refused a cast that was
-    // genuinely due. Now raising a request costs nothing: combatSpriteNextAt moves only
-    // when the aimed pass actually presses the ability, and a due-but-unserved request is
-    // simply re-raised on the next combat tick.
-    //
-    // ENTRY DELAY (user-directed): each time a fight STARTS, hold the first cast for
-    // COMBAT_SPRITE_ENTRY_DELAY_MS. The knight is still closing/turning in the opening
-    // moment, and mobs are usually still scattered, so an immediate cast is the weakest
-    // one of the fight. Detected by a GAP in calls rather than by hooking every combat
-    // case: this method only runs during combat phases, so more than ENTRY_GAP_MS since
-    // the last call means a new fight began. Continuous phases (a long COMBATLOOT, a
-    // PLATFORM arena) tick every frame and so never re-trigger it.
     private static long combatSpriteNextAt = 0L;
     private static long combatSpriteLastTick = 0L; // last tickCombatSprite call (gap => new fight)
     private static long combatSpriteEnteredAt = 0L; // when the current fight started
@@ -8735,9 +8664,7 @@ public final class SocketInputState {
         routineSub = 0;
         routineSubStart = System.currentTimeMillis();
         // Drop the cached walk grid at every step boundary: a step may have opened a
-        // route (ALCH_CHARGE's gate, a shot-out block whose placeable entry disappears),
-        // and the next step should plan against the floor as it is NOW. One rebuild per
-        // step is negligible — steps advance every few seconds, not every tick.
+        // route, and the next step should plan against the floor as it is NOW.
         pathGridModel = null;
         routinePath.tgtX = Float.NaN;
         routinePath.x = null;
@@ -8745,7 +8672,7 @@ public final class SocketInputState {
         hazPath.x = null;
         hazPath.noPathLogged = false;
         chaseReset();
-        chaseSuppressId = -1; // new step, new ground — a suppressed straggler may be reachable now
+        chaseSuppressId = -1;
         chaseGateCells = null;
         pathExtraBlocked = null; // paranoia: the overlay must never outlive its drive call
         routineCombatClearSince = 0L;
@@ -8875,9 +8802,6 @@ public final class SocketInputState {
         }
     }
 
-    // Finds aq(int key, int slot) — the sprite-action press queuer on the
-    // dungeon controller (registered for SPRITE_ACTION_1..3). Obfuscated name;
-    // if it changes on a future version this must be updated.
     private static java.lang.reflect.Method findSpriteMethod(Class<?> cls) {
         if (cachedSpriteAqMethod != null)
             return cachedSpriteAqMethod;
@@ -8897,8 +8821,6 @@ public final class SocketInputState {
         return null;
     }
 
-    // Finds dU(int key) — the matching sprite-action release. Obfuscated name;
-    // if it changes on a future version this must be updated.
     private static java.lang.reflect.Method findSpriteReleaseMethod(Class<?> cls) {
         if (cachedSpriteDuMethod != null)
             return cachedSpriteDuMethod;

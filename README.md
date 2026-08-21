@@ -6,7 +6,8 @@
 ### Building from source
 
 - Prerequisites: **Windows** (sorry Mac/mobile players!), a **JDK 25 or newer** (`javac`/`java` on PATH),
-  and, of course, SK. The first build downloads `javassist.jar` automatically.
+  **Python 3 with `pynput` + `pywin32`**, and, of course, **SK.** The **Knight Launcher** for SK is also
+  highly recommended. The first build downloads `javassist.jar` automatically.
 - Run **`.\build.ps1`**. It auto-detects your game install; override with `-InstallDir <path>`,
   the `SK_INSTALL_DIR` env var, or `install_dir=` in config.properties. It should output
   `sk-utils-mod.zip`.
@@ -21,6 +22,7 @@ If you're reading this, well, you've decided to take a look at this weird little
 This started out as a modest little project meant to have my alts follow me around when I was farming
 cracked boxes in the great era of unbound crack.
 Of course, I got greedy once I realized how much more I could do, and eventually this ballooned into a giant project.
+
 At the time of writing, this mod has the following functionality:
 - mostly-complete multibox, with synced movement, attacks, shields, sprite abilities, etc. Only thing
 I never cracked was swapping weapons, so you'll have to run splitscreen and swap weapons on each client manually.
@@ -37,9 +39,12 @@ basically flaunted multibox during times I *knew* GMs and devs were watching liv
 Long story short, I'm gone for good from this game. *This is foreseeably the final version of this mod.*
 
 That being said, to quell your fears of the Ban Stick a little, this mod does *not* talk to the server.
+
 **There is *no* automatic server-side tell that you are using this mod**, at least not at time of writing.
+
 The only way you get banned is if you attract enough attention for a dev/GM to *actively tune into your botted game session*.
 *Don't* pass around ill-gotten mixmasters between your main+alts like hot potatoes, *don't* bot right after major game updates, and *don't* brag about it.
+
 **TLDR: Don't be a dummy like me and you should be fine.**
 
 ---
@@ -47,15 +52,16 @@ The only way you get banned is if you attract enough attention for a dev/GM to *
 ## 0. Install & configure
 - **Run `build.ps1`. This will produce `sk-utils-mod.zip`. That is what you want to put into Knight Launcher.**
 - Before you boot the game up with the mod, **set the `main_account` variable in `~/.sk-utils/config.properties`**.
-- The mod is built against ONE exact game version
- (`pxVersion` in its `mod.json`). Game updates will require the mod to be re-built.
+- The `/.sk-utils/` subfolder that ships with the mod **goes in your Users/YourWindowsUsername/ folder.** It has some of my
+  pre-fab routines, the config file that you need to set, and stuff like debug logs and data.
+- The mod is built against ONE exact game version. Game updates will require the mod to be re-built.
 - Runtime config lives in **`~/.sk-utils/config.properties`**, where **`~/`** refers to your user
  folder (`C:/Users/XYZ/` or whatever).
   - `main_account=` — **required.** The KNIGHT (character) name of the main/controlling
     account.
-  - `party_size=` — total accounts being botted/multiboxed, main + alts (default 4).
+  - `party_size=` — total accounts being botted/multiboxed, main + alts *(default 4)*.
   When in full-auto mode, the bot waits for exactly this many knights on every floor.
-  - `udp_base_port=` — first port of the mod's local control plane (default 40000): the
+  - `udp_base_port=` — first port of the mod's local control plane *(default 40000)*: the
     main listens on it, alts take the next 20. Change only on a port conflict;
     `multibox.py` reads this same file so both sides stay in step.
 - **Main vs alt detection:** a client running under Steam is the MAIN; clients launched
@@ -68,6 +74,7 @@ The only way you get banned is if you attract enough attention for a dev/GM to *
   routines that I used to use (Axes of Evil, Snarby, Beyond Axes of Evil for when mirrored farming was briefly a thing).
   The RJP and FSC routines in the routines folder were *never finished*; I determined FSC to be beyond feasibility.
   As for RJP, I just got lazy.
+  
   Feel free to develop your own autopilot routines!
 
 
