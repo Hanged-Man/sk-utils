@@ -76,6 +76,9 @@ The only way you get banned is if you attract enough attention for a dev/GM to *
   As for RJP, I just got lazy.
   
   Feel free to develop your own autopilot routines!
+  **Where they go:** the source package ships a `.sk-utils/` folder — copy it into your user
+  folder as `~/.sk-utils` (i.e. `C:\Users\<you>\.sk-utils`) before first launch; it carries the
+  routines, prop masks, auction watch table and a config template.
 
 
 ---

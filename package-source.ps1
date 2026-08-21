@@ -24,6 +24,10 @@ if (Test-Path $Stage) { Remove-Item $Stage -Recurse -Force }
 New-Item -ItemType Directory -Path (Join-Path $Stage "modutils") -Force | Out-Null
 foreach ($f in $rootFiles) { Copy-Item $f $Stage }
 Copy-Item "modutils\*.java" (Join-Path $Stage "modutils")
+# Bundled runtime data (default routines, prop masks, watch table, config template):
+# the whole .sk-utils folder, recursively, so recipients can drop it in as ~/.sk-utils.
+if (-not (Test-Path ".sk-utils")) { throw "missing from source tree: .sk-utils folder" }
+Copy-Item ".sk-utils" (Join-Path $Stage ".sk-utils") -Recurse
 
 if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
 Compress-Archive -Path "$Stage\*" -DestinationPath $ZipPath
