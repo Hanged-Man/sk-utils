@@ -150,7 +150,7 @@ $json = @"
     "name": "SK Utils Mod (Windows)",
     "description": "SK utility mod.",
     "author": "with love, prince of krogmo",
-    "version": "7.0",
+    "version": "8.0",
     "type": "class",
     "pxVersion": "$PX_VERSION"
   }

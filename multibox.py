@@ -197,6 +197,11 @@ def is_auction_key(key):
     return key_to_char(key) == "\x05"
 
 
+def is_auction_sell_key(key):
+    # ctrl+w appears as ETB (\x17 in ASCII on Windows)
+    return key_to_char(key) == "\x17"
+
+
 def is_item_dump_key(key):
     # ctrl+u appears as NAK (\x15 in ASCII on Windows)
     return key_to_char(key) == "\x15"
@@ -455,6 +460,9 @@ def main():
     print("        queue -> match -> return to ready room -> requeue")
     print("Ctrl+E  Auction bot LIVE mode on the main: sweep the AH and BUY/BID per")
     print("        ~/.sk-utils/auction_watch.txt (spends crowns!). Finds -> auction_finds.log")
+    print("Ctrl+W  Auction auto-SELLER on the main: keep inventory LISTED per")
+    print("        ~/.sk-utils/auction_sells.txt — relists an item only when ALL its")
+    print("        live listings are gone (pays listing fees!)")
     print()
     print("=== DATA ===")
     print("Ctrl+\\  Summarize mission_stats.jsonl in this terminal (success rate, avg runtime")
@@ -622,6 +630,20 @@ def main():
 
             print("Auction LIVE mode toggled -> buys/bids per ~/.sk-utils/auction_watch.txt")
             sock.sendto(b"AUCTIONSCAN 1", ("127.0.0.1", MAIN_PORT))
+            return
+
+        # Ctrl+W toggles the auction auto-SELLER on the main: while on it keeps
+        # inventory listed on the AH per ~/.sk-utils/auction_sells.txt — when ALL
+        # live listings of a rule's item are gone (sold/expired), it lists fresh
+        # ones. The table is re-read on every pass; listing fees come out of the
+        # main's wallet.
+        if is_auction_sell_key(key):
+            if not focused_on_game_window():
+                print("Focused window is not a game window. Auction seller ignored.")
+                return
+
+            print("Auction SELLER toggled -> lists per ~/.sk-utils/auction_sells.txt")
+            sock.sendto(b"AUCTIONSELL 1", ("127.0.0.1", MAIN_PORT))
             return
 
         # Ctrl+U dumps every item's display name + config name to

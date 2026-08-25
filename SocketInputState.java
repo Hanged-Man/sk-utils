@@ -1300,6 +1300,14 @@ public final class SocketInputState {
                     continue;
                 }
 
+                // Auction auto-SELLER toggle (Ctrl+W, main only): keeps inventory listed
+                // per ~/.sk-utils/auction_sells.txt — the seller half of AuctionBot.java.
+                if ("AUCTIONSELL".equals(key)) {
+                    if (isMainAccount())
+                        AuctionBot.sellPending = true;
+                    continue;
+                }
+
                 if ("BARRIER".equals(key)) {
                     if ("1".equals(parts[1]) && isAutoFollowing) {
                         pendingBarrierUse = true;
