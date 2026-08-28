@@ -1,3 +1,3 @@
 shadow_beast 3 HARD
-# weapon 3 (sidearm) is used against these families; weapon 2 against everything else
-3 | Construct, Slime, Undead
+# weapon 2 (sidearm) is used against these families; weapon 1 against everything else
+2 | Construct, Slime, Undead

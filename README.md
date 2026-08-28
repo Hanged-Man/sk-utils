@@ -26,9 +26,6 @@ If there are any genuine bugs or problems with the mod *then* open an issue on t
 
 
 If you're reading this, well, you've decided to take a look at this weird little mod!
-This started out as a modest little project meant to have my alts follow me around when I was farming
-cracked boxes in the great era of unbound crack.
-Of course, I got greedy once I realized how much more I could do, and eventually this ballooned into a giant project.
 
 At the time of writing, this mod has the following functionality:
 - mostly-complete multibox, with synced movement, attacks, shields, sprite abilities, etc. Only thing
@@ -41,13 +38,12 @@ I never cracked was swapping weapons, so you'll have to run splitscreen and swap
 - data utilities to tally forge probabilities and autopilot mission success rates
 - abandoned code section that would've let bots dodge the wheels in FSC (Yes, this warranted an entire code file.)
 
-Alas, one who lives by the sword dies by the sword. I got really careless with this mod, left my autopilot running 24/7, and
-basically flaunted multibox during times I *knew* GMs and devs were watching live servers closely, like right after the mysterious spike update.
-Long story short, I'm gone for good from this game. *This is foreseeably the final version of this mod.*
-
+All of this is obviously highly bannable!
 That being said, to quell your fears of the Ban Stick a little, this mod does *not* talk to the server.
 
-**There is *no* automatic server-side tell that you are using this mod**, at least not at time of writing.
+It writes *nothing* to `projectx.log` or any other file that the devs can remotely dump.
+
+As such, **there is *no* automatic server-side tell that you are using this mod**, at least not at time of writing.
 
 The only way you get banned is if you attract enough attention for a dev/GM to *actively tune into your botted game session*.
 *Don't* pass around ill-gotten mixmasters between your main+alts like hot potatoes, *don't* bot right after major game updates, and *don't* brag about it.
@@ -265,12 +261,12 @@ routines/
     substrings **this mission only** treats as hazardous terrain.
     Don't set or include this line if you don't know what you're doing.
     This is for dungeons that mark randomised hazard spawn points with generic placeables.
-  - `3 | Construct, Slime, Undead` — The mod was designed for everyone to have an
-    **autogun-line gun in weap slot 2** and a **blaster-line gun in weap slot 3**. The use of other weapons\
+  - `2 | Construct, Slime, Undead` — The mod was designed for everyone to have an
+    **autogun-line gun in weap slot 1** and a **blaster-line gun in weap slot 2**. The use of other weapons\
     will require you to dig into my source code to customize the weapon firing cadences.
-    By default, bots will shoot at enemies with weapon 2. This line lets you specify which monster families,
-    if any, your knights will switch to weapon 3 against.
-    `3 |` with nothing after the bar = never switch (weapon 2 always).
+    By default, bots will shoot at enemies with weapon 1. This line lets you specify which monster families,
+    if any, your knights will switch to weapon 2 against.
+    `2 |` with nothing after the bar = never switch (weapon 1 always).
     **No line at all = the default Construct, Slime, Undead trio shown above**.
 - **Format of routine files:** one step per line — `TYPE <params...>`. `TYPE` is case-insensitive; every
   command's params start with world-coordinate `X Y` (1 tile = 1.0); some take more
@@ -284,7 +280,7 @@ routines/
 Stuff to keep in mind when you're designing new routines or revising old ones:
 
 - **Only the MAIN reads the routine.** Alts breadcrumb-follow the main's exact path.
-- The mod was designed for everyone to have a **autogun-line gun in weap slot 2** and a **blaster-line gun in weap slot 3**.
+- The mod was designed for everyone to have a **autogun-line gun in weap slot 1** and a **blaster-line gun in weap slot 2**.
   You'll have to dig into my code if you want this to work with any other weapons...sorry!
 - **Movement is driven by A\*** over a walkability grid. Breakable shrubs/stone, explosive,
   crystal and treasure blocks, as well as block clusters connected to ghost blocks are considered walkable
@@ -385,7 +381,7 @@ no living monster within `RANGE` tiles of the main (optional; default 10). **Doe
 (orbiting `(X,Y)`) → loot. Wave tracking is by monster identity.
 
 **`KILL X Y`** *(type 20)* — `SHOOT` for stationary **monsters** (e.g. wheel launchers): alts fire
-weapon 3 at `(X,Y)` until the Monster within 1.5 tiles of it **leaves the actor map**. Completion
+weapon 2 at `(X,Y)` until the Monster within 1.5 tiles of it **leaves the actor map**. Completion
 is presence-based with a seen-latch. 20 s fire budget, then advances (fail-open); a
 target never seen at all advances after 2 s of confirmed absence. **No pathing.** Position
 first; key-carry-safe (the main never fires).
@@ -410,7 +406,7 @@ One mineral per character per floor.
 **`BUTTON X Y`** *(type 7)* — Path precisely onto the button at `(X,Y)` (8 s timeout → advance).
 Will automatically shoot shrubs/stone blocks covering buttons first.
 
-**`SHOOT X Y`** *(type 3)* — Alts fire weapon 3 (I almost always have an Arcana in this slot)
+**`SHOOT X Y`** *(type 3)* — Alts fire weapon 2 (I almost always have an Arcana in this slot)
 at `(X,Y)` from where the main stands until the target block is destroyed / switch flips (4 sec timeout).
 **No pathing.** Position first.
 
@@ -451,8 +447,8 @@ when the gate opens. Requires an intact gold key from a prior `KEY_LIFT`. Timeou
 run**.
 
 **`ALCH_CHARGE X Y W Z`** *(type 25)* — I used this exclusively for Beyond Axes of Evil.
-Charge-shot a switch a straight line can't reach. Make sure the main has a 5* alchemer in weapon slot 3.
-The main equips weapon 3, holds attack aimed at `(X,Y)` for ~1.6 s, releases, then checks the
+Charge-shot a switch a straight line can't reach. Make sure the main has a 5* alchemer in weapon slot 2.
+The main equips weapon 2, holds attack aimed at `(X,Y)` for ~1.6 s, releases, then checks the
 **ghost block at `(W,Z)`** — repeating until that block is gone. **No pathing**.
 The charged shot's recoil knocks the main back, so wrap it in a `PIN_MOVETO … START/END` scope
 to hold the firing spot. Gives up after 45 s and **aborts the run**.
@@ -488,7 +484,7 @@ for you, because the block-clearing behavior treats a ghost block within 4 tiles
 - The Snarbolax is stunnable when he is howling, dodging, or using his chain-bite attack.
 - Shields drop when the boss is in a stunnable action within 3.5 tiles of the bell or the main.
 - When the Snarbolax dwells 250 ms within 3.5 tiles of a Beast Bell, **everyone** shoots the bell to stun it;
-  then all attack with weapon 2 until it recovers.
+  then all attack with weapon 1 until it recovers.
 - Knights will not drop shields or shoot the bell while Snarbolax is burrowing, warping,
   or doing his tail-whip.
 - If the boss is using his chain-bite and is within 1 tile of the main, all characters dash.

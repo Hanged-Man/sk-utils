@@ -276,6 +276,17 @@ final class Reflect {
     }
 
     /**
+     * Unwraps reflective wrappers to the real cause — an InvocationTargetException's
+     * toString hides it. The ONE shared definition: Relog, AuctionBot and DamageMeter
+     * all log reflective failures through this (they used to carry private copies).
+     */
+    static Throwable rootCause(Throwable t) {
+        while (t instanceof java.lang.reflect.InvocationTargetException && t.getCause() != null)
+            t = t.getCause();
+        return t;
+    }
+
+    /**
      * Scene-transition cache invalidation (controller class changed) — called from
      * SocketInputState's consumable tick, which detects the transition.
      */

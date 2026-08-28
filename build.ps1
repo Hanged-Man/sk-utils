@@ -135,7 +135,7 @@ Write-Host "Compiling MappingsNames.java..."
 javac --release $JavaRelease -cp "$SKCodeDir\*" "$OutDir\MappingsNames.java" -d "$OutDir"
 
 Write-Host "Compiling mod classes..."
-javac --release $JavaRelease -cp "$OutDir;$SKCodeDir\*" "Mappings.java" "Reflect.java" "WheelDodge.java" "SocketInputState.java" "SpriteFeeder.java" "MissionStats.java" "PvpAutoQueuer.java" "DamageMeter.java" "RoutineFile.java" "KeyBinds.java" "AuctionBot.java" "AutoJoiner.java" "ForgeTracker.java" -d "$OutDir"
+javac --release $JavaRelease -cp "$OutDir;$SKCodeDir\*" "Mappings.java" "Reflect.java" "WheelDodge.java" "SocketInputState.java" "SpriteFeeder.java" "MissionStats.java" "PvpAutoQueuer.java" "DamageMeter.java" "RoutineFile.java" "KeyBinds.java" "AuctionBot.java" "AutoJoiner.java" "ForgeTracker.java" "Relog.java" -d "$OutDir"
 if ($LASTEXITCODE -ne 0) { throw "javac failed (mod classes) - NOT zipping a broken build" }
 javac --release $JavaRelease -cp "$OutDir;$SKCodeDir\*" "ForgeAllAdapter.java" -d "$OutDir"
 if ($LASTEXITCODE -ne 0) { throw "javac failed (ForgeAllAdapter) - NOT zipping a broken build" }
@@ -150,7 +150,7 @@ $json = @"
     "name": "SK Utils Mod (Windows)",
     "description": "SK utility mod.",
     "author": "with love, prince of krogmo",
-    "version": "8.0",
+    "version": "8.1",
     "type": "class",
     "pxVersion": "$PX_VERSION"
   }

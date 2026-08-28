@@ -74,6 +74,14 @@ public final class AuctionBot {
      *  this long before being retried, so a permanent problem logs every 10 minutes
      *  instead of every pass. */
     private static final long SELL_BACKOFF_MS = 600000L;
+    /** e.please_wait is a SERVER-WIDE listing throttle (too many listings by players
+     *  online in a short window — user-identified), not a problem with the rule or
+     *  the item: retry on this short cadence instead of the rule backoff. */
+    private static final long SELL_THROTTLE_RETRY_MS = 10000L;
+    /** Throttle retries per Create before treating it as a permanent failure (rule
+     *  backoff + purge) — bounds a refusal that merely CONTAINS please_wait, which
+     *  would otherwise block every other rule's creates forever. ~15 min at 10s. */
+    private static final int SELL_THROTTLE_MAX_RETRIES = 90;
 
     /** Set by the Ctrl+E hotkey (UDP "AUCTIONSCAN"); consumed by {@link #tick}. */
     public static volatile boolean scanPending = false;
@@ -224,6 +232,7 @@ public final class AuctionBot {
         final String durName;
         final String label;      // display name, for logs
         final String ruleNeedle; // owning rule, for failure backoff
+        int throttleRetries = 0; // please_wait requeues so far (capped)
 
         Create(long itemOid, int count, int startBid, int buyout, String durName,
                 String label, String ruleNeedle) {
@@ -296,14 +305,18 @@ public final class AuctionBot {
             return;
         }
         // Work pending listings one at a time, paced like buys — never a burst.
+        // While the queue is merely WAITING (pacing gap or a please_wait throttle
+        // retry), FALL THROUGH so the buy half keeps sweeping — a throttle wait can
+        // now stretch to many seconds and must not starve Ctrl+E. A fresh sell pass
+        // still cannot start until the queue drains (else it would recount listings
+        // mid-batch, read 0 live, and plan the same creates twice).
         if (!sellCreates.isEmpty()) {
             if (now >= nextSellActionAt) {
                 doCreate(sellCreates.remove(0));
                 nextSellActionAt = now + ACTION_INTERVAL_MS + (long) (Math.random() * ACTION_JITTER_MS);
+                return;
             }
-            return;
-        }
-        if (sellMode && now >= nextSellAt) {
+        } else if (sellMode && now >= nextSellAt) {
             nextSellAt = now + SELL_INTERVAL_MS;
             startSellPass(ctx);
             return;
@@ -349,7 +362,7 @@ public final class AuctionBot {
             log("[auction] sweep started — " + rules.size() + " rule(s), live=" + liveMode);
             requestPage(0);
         } catch (Exception e) {
-            log("[auction] could not start: " + e);
+            log("[auction] could not start: " + describe(e));
             scanRunning = false;
         }
     }
@@ -360,30 +373,33 @@ public final class AuctionBot {
     private static Object resolveService(Object ctx) throws Exception {
         if (ctx == null)
             return null;
-        Class<?> clientCls = Class.forName(CLIENT_CLASS);
-        Object client = null;
-        for (Method m : ctx.getClass().getMethods()) {
-            if (m.getParameterTypes().length == 0 && clientCls.isAssignableFrom(m.getReturnType())) {
-                m.setAccessible(true);
-                client = m.invoke(ctx);
-                if (client != null)
-                    break;
-            }
-        }
-        if (client == null)
+        // The shared Mappings pair — one definition of ctx -> Client -> service; the
+        // skip-throwing-candidates hardening (a getter can THROW in bad client states
+        // like relog/character select, and the seller polls in every state) lives in
+        // Mappings.getService now, so every other subsystem gets it too. A throw here
+        // (bad state) is "unavailable, retry later", not an abort.
+        try {
+            Object client = Mappings.getClientManager(ctx);
+            if (client == null)
+                return null;
+            return Mappings.getService(client, Class.forName(SVC_CLASS));
+        } catch (Exception e) {
             return null;
-        Class<?> svcCls = Class.forName(SVC_CLASS);
-        // Client.bS(Class) -> service. Found by shape: one Class parameter, Object return.
-        for (Method m : clientCls.getMethods()) {
-            Class<?>[] p = m.getParameterTypes();
-            if (p.length == 1 && p[0] == Class.class && m.getReturnType() == Object.class) {
-                m.setAccessible(true);
-                Object s = m.invoke(client, svcCls);
-                if (s != null)
-                    return s;
-            }
         }
-        return null;
+    }
+
+    /** Throwable -> log string with reflective wrappers unwrapped (an
+     *  InvocationTargetException's toString hides the actual cause). */
+    private static String describe(Throwable t) {
+        Throwable c = Reflect.rootCause(t);
+        return (c == t) ? String.valueOf(t) : t + " <- " + c;
+    }
+
+    /** True for the server's transient "too many requests" refusal (e.please_wait —
+     *  a server-wide window throttle, user-identified): says nothing about the
+     *  request, the rule, or the service method being wrong. */
+    private static boolean isTransientThrottle(String why) {
+        return why != null && why.contains("please_wait");
     }
 
     /**
@@ -859,9 +875,10 @@ public final class AuctionBot {
                                 boughtIds.remove(Long.valueOf(a.auctionId));
                             else
                                 myBids.remove(Long.valueOf(a.auctionId));
-                            if (a.buyout && !buyMethodConfirmed) {
+                            if (a.buyout && !buyMethodConfirmed && !isTransientThrottle(why)) {
                                 // Wrong candidate: switch to the other single-arg method
-                                // and let the next sweep retry this listing.
+                                // and let the next sweep retry this listing. A transient
+                                // throttle is NOT evidence about the method — never flip on it.
                                 buyMethod = "b".equals(buyMethod) ? "a" : "b";
                                 log("[auction] buyout method '" + (("b".equals(buyMethod)) ? "a" : "b")
                                         + "' rejected — trying '" + buyMethod + "' next");
@@ -936,7 +953,7 @@ public final class AuctionBot {
             sellRunning = true;
             processNextSellRule();
         } catch (Exception e) {
-            log("[auction] seller: could not start: " + e);
+            log("[auction] seller: could not start: " + describe(e));
             sellFinish();
         }
     }
@@ -1227,8 +1244,23 @@ public final class AuctionBot {
                         public Object invoke(Object proxy, Method mm, Object[] args) {
                             if (mm.getParameterTypes().length == 1
                                     && mm.getParameterTypes()[0] == String.class) {
+                                String why = (args == null) ? "?" : String.valueOf(args[0]);
+                                if (isTransientThrottle(why)
+                                        && ++c.throttleRetries <= SELL_THROTTLE_MAX_RETRIES) {
+                                    // Transient global throttle: requeue this exact create at
+                                    // the head and hold the whole queue briefly — retries every
+                                    // ~10s until the server accepts, up to the retry cap
+                                    // (past it, fall through to the permanent-failure path).
+                                    log("[auction] seller: server listing throttle (please_wait) on "
+                                            + c.label + " — retrying in "
+                                            + (SELL_THROTTLE_RETRY_MS / 1000) + "s ("
+                                            + c.throttleRetries + "/" + SELL_THROTTLE_MAX_RETRIES + ")");
+                                    sellCreates.add(0, c);
+                                    nextSellActionAt = System.currentTimeMillis() + SELL_THROTTLE_RETRY_MS;
+                                    return null;
+                                }
                                 log("[auction] seller: LISTING FAILED on " + c.label + ": "
-                                        + (args == null ? "?" : args[0]) + " — rule '" + c.ruleNeedle
+                                        + why + " — rule '" + c.ruleNeedle
                                         + "' backing off " + (SELL_BACKOFF_MS / 60000) + " min");
                                 sellBackoffUntil.put(c.ruleNeedle, Long.valueOf(
                                         System.currentTimeMillis() + SELL_BACKOFF_MS));

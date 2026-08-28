@@ -340,7 +340,7 @@ public class DamageMeter {
             comp.getClass().getMethod("setStyleConfigs", StyleConfig[].class)
                     .invoke(comp, (Object) new StyleConfig[] { sc });
         } catch (Throwable e) {
-            Throwable c = (e instanceof java.lang.reflect.InvocationTargetException) ? e.getCause() : e;
+            Throwable c = Reflect.rootCause(e);
             ForgeTracker.debug("DamageMeter.setStyle ERR on " + comp.getClass().getSimpleName()
                     + ": " + c + (c.getStackTrace().length > 0 ? " @ " + c.getStackTrace()[0] : ""));
         }

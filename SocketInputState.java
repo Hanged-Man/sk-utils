@@ -146,10 +146,10 @@ public final class SocketInputState {
     public static volatile int antiIdleKeyCode = -1;
     public static volatile long antiIdleUntil = 0L;
 
-    // Combat bot (multibox Ctrl+B, all accounts): switch to weapon slot 3 and
+    // Combat bot (multibox Ctrl+B, all accounts): switch to weapon slot 2 and
     // fire at the nearest living enemy while enabled. tickCombatBot (game tick)
     // enumerates Monster actors from the tudey view, picks the closest, selects
-    // weapon 3 via the controller's dW(int), and sets botFireAngle/botFiring;
+    // weapon 2 via the controller's dW(int), and sets botFireAngle/botFiring;
     // the patched InputState.poll dispatches aimed weapon fire.
     public static volatile boolean isCombatBot = false;
     public static volatile boolean botFiring = false;   // tick: cleared to run a firing cycle now
@@ -157,14 +157,14 @@ public final class SocketInputState {
     public static volatile boolean botFireHeld = false; // poll has the fire button pressed
     public static volatile long botTapReleaseAt = 0L;   // when to release the current press
     public static volatile long botNextTapAt = 0L;      // when the current wait/rest ends
-    // Firing-cycle state machine (poll-owned). A whole cycle — three-tap+reload
-    // for the gun (weapon 3), or a single 40ms tap + 500ms gap for weapon 2 —
-    // runs to completion, and the tick is forbidden from changing weapon/mode
-    // while botCycleActive is true. That prevents a swap ever landing mid-animation.
+    // Firing-cycle state machine (poll-owned). A whole cycle — 3 taps 100ms apart
+    // + 150ms reload for the gun (weapon 2), or 2 taps 250ms apart + 150ms reload
+    // for weapon 1 — runs to completion, and the tick is forbidden from changing
+    // weapon/mode while botCycleActive is true, so a swap never lands mid-animation.
     public static volatile boolean botCycleActive = false; // a firing cycle is in progress
     public static volatile int botCyclePhase = 0;          // 0 idle, 1 pressed, 2 waiting
     public static volatile int botTapIndex = 0;            // gun taps fired so far this cycle
-    public static volatile boolean botCycleWeapon2 = false; // cadence latched at this cycle's start (true = weapon 2)
+    public static volatile boolean botCycleWeapon2 = false; // cadence latched at this cycle's start (true = weapon 1)
     // Shield dodge: hold shield while an enemy bullet is within 2 tiles.
     public static volatile boolean botShieldHold = false; // a dangerous bullet is near
     public static volatile boolean botShieldHeld = false; // poll has X held for shield
@@ -195,19 +195,24 @@ public final class SocketInputState {
     // 1 tile ≈ 1.0 world unit in tudey; compared squared. Tunable.
     private static final float BULLET_SHIELD_RADIUS_SQ = 4.0f; // (2 tiles)^2
     private static java.lang.reflect.Method cachedBulletHitMethod = null; // Bullet.e(Actor)
-    // Weapon-2 mode: against enemies NOT in a weapon-3 family (below), use
-    // weapon 2 with a single 40ms tap / 500ms gap cadence. Otherwise use weapon 3
-    // (gun) with the standard three-tap+reload cadence. (The old bomb mode is
-    // dummied out.) Decided each cycle by the CLOSEST enemy's family.
+    // Weapon-1 mode: against enemies NOT in a weapon-2 family (below), use
+    // weapon 1 with the 2-tap cadence (40ms taps 250ms apart, 150ms reload).
+    // Otherwise use weapon 2 (gun) with the 3-tap cadence (100ms apart, 150ms
+    // reload). (The old bomb mode is dummied out.) Decided each cycle by the
+    // CLOSEST enemy's family.
     //
-    // Weapon 3 is ALWAYS the bot's SIDEARM: the families weapon 2 is INEFFECTIVE
-    // against are per-mission DATA — an optional "3 | Construct, Slime, Undead"
+    // Weapon 2 is ALWAYS the bot's SIDEARM: the families weapon 1 is INEFFECTIVE
+    // against are per-mission DATA — an optional "2 | Construct, Slime, Undead"
     // line in mission_data.txt (loadMissionWeaponConfig), broadcast to the alts as
     // GUNFAMILIES so every client's combat bot switches identically. This default
     // = the old hardcoded trio, kept for missions without the line and for manual
     // Ctrl+B combat outside a routine.
+    // NOTE the "Weapon2" in the bot field names below is HISTORICAL: it means the
+    // PRIMARY (single-tap) weapon, which sat in-game slot 2 until the 2026-08-27
+    // slot shift moved everything down — primary is now in-game weapon 1, the
+    // sidearm/gun in-game weapon 2. The names stay because they are Patcher-pinned.
     private static volatile String[] gunFamilies = { "construct", "slime", "undead" };
-    public static volatile boolean botWeapon2Mode = false; // committed cadence; poll latches it at cycle start
+    public static volatile boolean botWeapon2Mode = false; // committed cadence; poll latches it at cycle start (true = PRIMARY weapon)
     private static volatile int botLastWeaponSlot = -1; // slot we believe is equipped; -1 = unknown
     private static volatile long botNextTickAt = 0L;
     private static volatile long botWeaponSwitchAt = 0L;
@@ -217,12 +222,12 @@ public final class SocketInputState {
     private static final long BOT_TICK_INTERVAL_MS = 100L;
     private static final long BOT_WEAPON_SWITCH_MS = 400L;  // periodic same-slot re-assert
     private static final long BOT_WEAPON_SETTLE_MS = 300L;  // fire hold after a switch
-    // Cycle timings live inline in the Patcher poll block: gun (weapon 3) = 3 taps
-    // of 40ms held / 100ms apart, then a 300ms reload; weapon 2 = one 40ms tap then
-    // a 500ms gap. Kept there because the poll (a separate class) cannot read
-    // SocketInputState's private constants.
-    private static final int WEAPON2_SLOT = 1;     // weapon 2 (0-indexed)
-    private static final int GUN_WEAPON_SLOT = 2;  // weapon 3 (0-indexed)
+    // Cycle timings live inline in the Patcher poll block: gun (weapon 2) = 3 taps
+    // of 40ms held / 100ms apart, then a 150ms reload; weapon 1 = 2 taps of 40ms
+    // held / 250ms apart, then a 150ms reload. Kept there because the poll (a
+    // separate class) cannot read SocketInputState's private constants.
+    private static final int PRIMARY_WEAPON_SLOT = 0; // in-game weapon 1 (0-indexed; the single-tap weapon — was slot 2 pre-2026-08-27)
+    private static final int GUN_WEAPON_SLOT = 1;     // in-game weapon 2 (0-indexed; the SIDEARM/gun — was slot 3)
     // Vertical foreshortening of the world→screen aim: the gameplay camera sits
     // at 45° elevation (scene_global.dat), so world-depth (Y) compresses to
     // sin(45°) on screen while world-X is unchanged. Scale dy before atan2.
@@ -850,7 +855,7 @@ public final class SocketInputState {
                 }
 
                 if ("SHOOTALT".equals(parts[0])) {
-                    // SHOOT reroute: the main tells the alts to fire weapon 3 at (x,y)
+                    // SHOOT reroute: the main tells the alts to fire weapon 2 at (x,y)
                     // ("SHOOTALT x y") or to stop ("SHOOTALT off"). Alt-side only.
                     if (parts.length >= 3) {
                         try {
@@ -1134,14 +1139,14 @@ public final class SocketInputState {
                 }
 
                 if ("GUNFAMILIES".equals(key)) {
-                    // Per-mission weapon-3 families from the main (see gunFamilies /
-                    // loadMissionWeaponConfig). "-" = empty list (weapon 2 always).
+                    // Per-mission weapon-2 families from the main (see gunFamilies /
+                    // loadMissionWeaponConfig). "-" = empty list (weapon 1 always).
                     if (parts.length >= 2 && !"-".equals(parts[1]))
                         gunFamilies = parts[1].toLowerCase(Locale.ROOT).split(",");
                     else
                         gunFamilies = new String[0];
                     if (debug)
-                        debugFile("[combatbot] weapon-3 families <- " + String.join(",", gunFamilies));
+                        debugFile("[combatbot] weapon-2 families <- " + String.join(",", gunFamilies));
                     continue;
                 }
 
@@ -1690,7 +1695,7 @@ public final class SocketInputState {
      * Called each tick on every account while the combat bot is enabled.
      * Self-throttled to BOT_TICK_INTERVAL_MS. Reads the tudey view's actor map,
      * finds the closest living Monster to this character's pawn, selects weapon
-     * slot 3 via the controller's dW(int), and sets botFireAngle (world→screen
+     * slot 2 via the controller's dW(int), and sets botFireAngle (world→screen
      * aim) + botFiring so the patched InputState.poll fires. Clears botFiring
      * when no enemy is present. The controller is the dungeon client (m).
      */
@@ -1800,8 +1805,8 @@ public final class SocketInputState {
             }
 
             // Weapon choice by the CLOSEST enemy's family: Construct/Slime/Undead
-            // → weapon 3 (gun, standard cadence); anything else → weapon 2 (single
-            // 40ms tap / 500ms gap).
+            // → weapon 2 (gun, 3-tap cadence); anything else → weapon 1 (2-tap
+            // cadence).
             boolean useWeapon2 = !isGunFamily(closest);
 
             // Aim at the closest enemy. No camera rotation (azimuth 0), so the
@@ -1848,7 +1853,7 @@ public final class SocketInputState {
             // Between cycles (safe boundary): commit the weapon for the next
             // cycle, advancing the equipped-slot belief and the cadence flag
             // together only on a successful select.
-            int desiredSlot = useWeapon2 ? WEAPON2_SLOT : GUN_WEAPON_SLOT;
+            int desiredSlot = useWeapon2 ? PRIMARY_WEAPON_SLOT : GUN_WEAPON_SLOT;
             if (desiredSlot != botLastWeaponSlot) {
                 if (selectWeapon(controller, desiredSlot)) {
                     botLastWeaponSlot = desiredSlot;
@@ -1902,10 +1907,10 @@ public final class SocketInputState {
     }
 
     /**
-     * True if a Monster belongs to a weapon-3 (sidearm) family — one weapon 2 is
+     * True if a Monster belongs to a weapon-2 (sidearm) family — one weapon 1 is
      * ineffective against — read from its actor config reference path (e.g.
      * "Monster/Construct/..."). The family list is per-mission data (gunFamilies).
-     * Unknown/unreadable families return false (→ weapon 2).
+     * Unknown/unreadable families return false (→ weapon 1).
      */
     private static boolean isGunFamily(Object actor) {
         String s = Reflect.actorConfigName(actor).toLowerCase(Locale.ROOT);
@@ -1918,7 +1923,7 @@ public final class SocketInputState {
 
     /**
      * Selects the weapon matching the cadence just latched for the current firing
-     * cycle (weapon 2 vs gun). Called from the poll at the START of every cycle so
+     * cycle (weapon 1 vs gun). Called from the poll at the START of every cycle so
      * a weapon/cadence mismatch can never persist beyond a single cycle. Runs on
      * the local account's controller (dungeonClient), same GL thread as the tick.
      */
@@ -1926,7 +1931,7 @@ public final class SocketInputState {
         Object ctrl = dungeonClient;
         if (ctrl == null)
             return;
-        int slot = botCycleWeapon2 ? WEAPON2_SLOT : GUN_WEAPON_SLOT;
+        int slot = botCycleWeapon2 ? PRIMARY_WEAPON_SLOT : GUN_WEAPON_SLOT;
         selectWeapon(ctrl, slot);
         botLastWeaponSlot = slot; // keep the tick's equipped-slot belief in sync
     }
@@ -3947,6 +3952,15 @@ public final class SocketInputState {
     // Campaign (Ctrl+R full run): run each floor's routine head-to-toe, auto-starting the
     // next floor's routine once the whole party has loaded in, until a TERMINAL floor.
     public static volatile boolean campaignActive = false; // gates tickCampaign (Patcher-stubbed)
+
+    /** True while ANY full-auto mode drives this client: the Ctrl+R cycle
+     *  (campaignActive on the main, its autoAdvanceOn broadcast mirror on every
+     *  client) or the Ctrl+Q PvP autoqueue. Relog gates auto-reconnect on this —
+     *  a NEW full-auto mode's flag belongs in this list, or its clients won't
+     *  self-reconnect after a disconnect. */
+    static boolean isFullAutoArmed() {
+        return campaignActive || autoAdvanceOn || isAutoPvpQueue;
+    }
     private static String campaignLastFloor = null;        // floor key of the running/last routine (detects a NEW floor)
     private static long campaignLoadedSince = 0L;          // when the party finished loading on the new floor (settle start)
     // Active mission (multi-mission, data-driven): routines/active_mission.txt names the mission
@@ -4054,12 +4068,12 @@ public final class SocketInputState {
     // SHOOT fire (poll-driven, independent of the combat bot).
     public static volatile boolean routineShootActive = false;
     public static volatile float routineShootAngle = 0f;
-    // SHOOT reroute (user): the ALTS fire weapon 3 at the target while the MAIN only
+    // SHOOT reroute (user): the ALTS fire weapon 2 at the target while the MAIN only
     // monitors + advances — the main never fires, so a carried key is never dropped
     // (SHOOT is safe between KEY and GATE). Main broadcasts "SHOOTALT x y" / "SHOOTALT off".
     public static volatile boolean isRoutineShootAlt = false;    // alt: fire-at-target mode
     public static volatile float shootAltX = 0f, shootAltY = 0f; // alt: the SHOOT target world coord
-    private static long shootAltSelectedAt = 0L;                 // alt: when weapon 3 was selected (for the settle)
+    private static long shootAltSelectedAt = 0L;                 // alt: when weapon 2 was selected (for the settle)
     public static volatile boolean routineShootHeld = false;
     public static volatile long routineShootReleaseAt = 0L;
     public static volatile long routineShootNextAt = 0L;
@@ -4108,7 +4122,7 @@ public final class SocketInputState {
     private static final long KEY_TAP_HOLD_DEFAULT_MS = 80L; // restore value — ALCH_CHARGE borrows keyTapHoldMs for a 1.6s charge, and leaving it long would turn every later KEY/GATE tap into a charged attack
 
     // ALCH_CHARGE X Y W Z — charge-shot a switch a straight line can't reach. Holds
-    // weapon 3's attack aimed at (X,Y) for ALCH_CHARGE_HOLD_MS, releases, then looks at
+    // weapon 2's attack aimed at (X,Y) for ALCH_CHARGE_HOLD_MS, releases, then looks at
     // the GHOST GATE at (W,Z); repeats until that gate is gone. For ricochet guns
     // (Alchemer family), whose charged shot banks off walls — so (X,Y) is a BANK ANGLE,
     // not the switch itself. MAIN-only; alts just hold position.
@@ -4306,10 +4320,10 @@ public final class SocketInputState {
     private static final long TRAP_OBS_GAP_MS = 1500L;     // observation gap longer than this invalidates all edges
 
     // Breakable-block clearing (MOVETO + LOOT). Breakable blocks are walkable, but
-    // when one sits on the path and the main gets within range, shoot it (weapon 3)
+    // when one sits on the path and the main gets within range, shoot it (weapon 2)
     // like SHOOT until it's gone. Reuses routineShoot* for the actual firing.
     private static boolean blockClearActive = false;      // currently firing at a path block (weapon selected)
-    private static long blockClearSelectAt = 0L;          // when weapon 3 was selected (for the settle)
+    private static long blockClearSelectAt = 0L;          // when weapon 2 was selected (for the settle)
     private static final float BLOCK_SHOOT_RANGE_SQ = 16f; // (4 tiles)^2 — start shooting a path block within this of the main
     private static final float BLOCK_PATH_MATCH_SQ = 0.64f; // block within 0.8 tile of a remaining waypoint = on the path
     private static final float BLOCK_COLLIDE_SQ = 1.44f;    // (1.2 tiles)^2 — a breakable this close is blocking the main even if its waypoint was already passed
@@ -4392,13 +4406,13 @@ public final class SocketInputState {
 
     private static final long BUTTON_TIMEOUT_MS = 8000L; // give up waiting for a floor button to flip
     // SNARBY (Snarbolax boss fight): STAND at (X,Y); loop shield → boss within 2 tiles of a
-    // Beast Bell → MAIN rings the bell (weapon 3) → boss STUNNED (readable condition, name
-    // contains "stun") → all drop shields + combat (weapon 2) → stun ends → re-shield; exit
+    // Beast Bell → MAIN rings the bell (weapon 2) → boss STUNNED (readable condition, name
+    // contains "stun") → all drop shields + combat (weapon 1) → stun ends → re-shield; exit
     // when no monster within 10 tiles. Reuses routineShieldHold (main shield) + SHIELD
     // broadcast (alts) + routineShoot* (bell) + isCombatBot/combat-mirror (attack).
     private static boolean isSnarbyActive = false;            // gates serviceShieldBump off (SNARBY owns routineShieldHold)
     private static boolean snarbyAltShieldBroadcast = false;  // last SHIELD state broadcast to alts (only broadcast on change)
-    private static long snarbyBellSelectAt = 0L;              // when weapon 3 was armed for the bell shot (settle)
+    private static long snarbyBellSelectAt = 0L;              // when weapon 2 was armed for the bell shot (settle)
     private static boolean snarbyBossDead = false;           // observed the Snarbolax with hp<=0 (a BURROW vanishes at >0 hp → does NOT set this)
     private static long snarbyBellInRangeSince = 0L;         // when the boss entered the bell radius (dwell before ringing)
     private static final float SNARBY_BELL_RADIUS_SQ = 12.25f; // (3.5 tiles)^2 — boss within this of a Beast Bell => (after the dwell + activity gate) ring it
@@ -4782,10 +4796,10 @@ public final class SocketInputState {
                     break;
                 }
                 case T_SHOOT: {
-                    // Rerouted (user): the ALTS fire weapon 3 at (X,Y); the MAIN only
+                    // Rerouted (user): the ALTS fire weapon 2 at (X,Y); the MAIN only
                     // monitors and advances — it NEVER fires, so a carried key is never
                     // dropped (SHOOT is safe between KEY and GATE). Main holds position;
-                    // combat forced off so the alts' weapon-3 selection isn't overridden.
+                    // combat forced off so the alts' weapon-2 selection isn't overridden.
                     clearMovementKeys();
                     isCombatBot = false;
                     if (routineSub == 0) { // wait for the alts to gather at the shot spot, then start them
@@ -4867,7 +4881,7 @@ public final class SocketInputState {
                     break;
                 }
                 case T_ALCH_CHARGE: {
-                    // Charge weapon 3 aimed at (X,Y), release, then check the GHOST GATE at
+                    // Charge weapon 2 aimed at (X,Y), release, then check the GHOST GATE at
                     // (W,Z); repeat until it's gone. The aim point is a BANK ANGLE for a
                     // ricochet gun, so it is deliberately NOT the switch's own position and
                     // nothing here tries to path or re-aim toward the gate.
@@ -4975,7 +4989,7 @@ public final class SocketInputState {
                     break;
                 }
                 case T_KILL: {
-                    // SHOOT with a MONSTER-GONE completion: the ALTS fire weapon 3 at
+                    // SHOOT with a MONSTER-GONE completion: the ALTS fire weapon 2 at
                     // (X,Y) until the Monster there LEAVES THE ACTOR MAP. Main-only
                     // monitoring, same as SHOOT, so KILL stays key-carry-safe.
                     //
@@ -5512,8 +5526,8 @@ public final class SocketInputState {
                     // Snarbolax boss fight. ORBIT (X,Y) like COMBATLOOT (recovers if knocked off),
                     // standing only for the bell shot. Loop: SHIELD (main+alts) until the boss DWELLS
                     // within SNARBY_BELL_RADIUS of a Beast Bell for SNARBY_BELL_DWELL_MS → BELL (stand;
-                    // main drops shield + rings the bell w/ weapon 3) until the boss is STUNNED →
-                    // ATTACK (all drop shields, combat bot fires weapon 2) until the stun ends → back
+                    // main drops shield + rings the bell w/ weapon 2) until the boss is STUNNED →
+                    // ATTACK (all drop shields, combat bot fires weapon 1) until the stun ends → back
                     // to SHIELD. The boss's _activity gates both the ring (never during charge/warp
                     // 12-14) and the shields (ALL down while he's targetable 4-11 in bell range — see
                     // SNARBY_ACT_*). Exit when no monster within 10 tiles of (X,Y).
@@ -5559,7 +5573,7 @@ public final class SocketInputState {
                             routineCombatClearSince = 0L;
                         }
                         if (boss != null && isStunned(boss)) {
-                            // ATTACK: all drop shields; combat bot fires weapon 2 at the boss. ORBIT (X,Y).
+                            // ATTACK: all drop shields; combat bot fires weapon 1 at the boss. ORBIT (X,Y).
                             driveCombatOrbit(mp, tx, ty);
                             routineShieldHold = false;
                             routineShootActive = false;
@@ -5574,7 +5588,7 @@ public final class SocketInputState {
                             isCombatBot = true;
                         } else {
                             // Not stunned: SHIELD/dwell (ORBIT) → BELL (STAND + ring), driven by the
-                            // boss's live _activity (see SNARBY_ACT_* decode). Keep weapon 3 ARMED
+                            // boss's live _activity (see SNARBY_ACT_* decode). Keep weapon 2 ARMED
                             // throughout (arm once; settles in the background) so the bell shot fires
                             // instantly. RING only after the boss has dwelt in the bell radius for
                             // SNARBY_BELL_DWELL_MS continuously AND he isn't charging/warping
@@ -6251,7 +6265,7 @@ public final class SocketInputState {
 
     /**
      * Clears breakable blocks (shrubs) that sit on the path {@code pf} ahead of the
-     * main: the nearest one within BLOCK_SHOOT_RANGE gets shot with weapon 3 (like
+     * main: the nearest one within BLOCK_SHOOT_RANGE gets shot with weapon 2 (like
      * SHOOT) until it's gone. Movement is left to the caller — the main pushes up to
      * the block's collision and keeps firing until it breaks, then walks through.
      * Called from MOVETO and LOOT only (NOT combat/KEY/GATE steps).
@@ -6274,7 +6288,7 @@ public final class SocketInputState {
 
     /**
      * If a breakable block sits within ~1.5 tiles of (tx,ty) and within shooting
-     * range of the main, fire weapon 3 at it (like SHOOT). Used during a BUTTON
+     * range of the main, fire weapon 2 at it (like SHOOT). Used during a BUTTON
      * press: a shrub on/next to the button stops the main ~1 tile short (so pathTo
      * already reported "arrived"), and this clears it so the step can land. Returns
      * true while firing. Reuses the block-clear fire state.
@@ -7316,7 +7330,7 @@ public final class SocketInputState {
 
     /**
      * Alt-side SHOOT (called each tick from injected code with the alt's own pos +
-     * pawn id): while isRoutineShootAlt, select weapon 3, aim at the broadcast target
+     * pawn id): while isRoutineShootAlt, select weapon 2, aim at the broadcast target
      * from this alt's position, and fire via the shared routine-shoot poll block.
      * Holds position (auto-follow is gated off) so the shot stays lined up. The MAIN
      * no longer fires SHOOT, so a carried key is never dropped (SHOOT is KEY-GATE safe).
@@ -7330,7 +7344,7 @@ public final class SocketInputState {
         clearMovementKeys(); // hold position; aim + fire in place
         long now = System.currentTimeMillis();
         if (shootAltSelectedAt == 0L) {
-            selectWeapon(dungeonClient, GUN_WEAPON_SLOT); // ensure weapon 3 (once, then settle)
+            selectWeapon(dungeonClient, GUN_WEAPON_SLOT); // ensure weapon 2 (once, then settle)
             shootAltSelectedAt = now;
         }
         routineShootAngle = Reflect.aimAngleTo(new float[] { ax, ay }, shootAltX, shootAltY);
@@ -7953,13 +7967,15 @@ public final class SocketInputState {
     }
 
     /**
-     * Per-mission weapon-3 (sidearm) families, from an optional
-     * {@code 3 | Construct, Slime, Undead} line in mission_data.txt: the monster
-     * families weapon 2 is ineffective against, so the combat bot (main + alts)
-     * switches to weapon 3 when the closest enemy is one of them. The leading
-     * {@code 3} names the weapon slot (future-proofing; only 3 is meaningful — the
-     * sidearm slot is fixed). {@code 3 |} with nothing after the bar = never switch
-     * (weapon 2 for everything). NO line at all = the legacy default trio, so
+     * Per-mission weapon-2 (sidearm) families, from an optional
+     * {@code 2 | Construct, Slime, Undead} line in mission_data.txt: the monster
+     * families weapon 1 is ineffective against, so the combat bot (main + alts)
+     * switches to weapon 2 when the closest enemy is one of them. The leading
+     * {@code 2} names the sidearm slot ({@code 3} is still accepted — the
+     * pre-2026-08-27 spelling, from before the slot shift — so an old line keeps
+     * working instead of silently falling back to the default families).
+     * {@code 2 |} with nothing after the bar = never switch
+     * (weapon 1 for everything). NO line at all = the legacy default trio, so
      * existing missions behave exactly as before. Loaded on the MAIN at Ctrl+R;
      * pushed to the alts via the GUNFAMILIES broadcast (see gunFamilies).
      */
@@ -7973,7 +7989,10 @@ public final class SocketInputState {
                     line = line.substring(0, h);
                 line = line.trim();
                 int bar = line.indexOf('|');
-                if (bar < 0 || !"3".equals(line.substring(0, bar).trim()))
+                if (bar < 0)
+                    continue;
+                String slotTag = line.substring(0, bar).trim();
+                if (!"2".equals(slotTag) && !"3".equals(slotTag)) // "3" = pre-shift spelling
                     continue;
                 java.util.ArrayList<String> out = new java.util.ArrayList<String>();
                 for (String s : line.substring(bar + 1).split(",")) {
@@ -7987,8 +8006,8 @@ public final class SocketInputState {
         } catch (Exception e) {
         }
         gunFamilies = fams;
-        debugFile("[campaign] weapon-3 families: "
-                + (fams.length == 0 ? "(none — weapon 2 always)" : String.join(",", fams)));
+        debugFile("[campaign] weapon-2 families: "
+                + (fams.length == 0 ? "(none — weapon 1 always)" : String.join(",", fams)));
     }
 
     /** The GUNFAMILIES broadcast payload for the current gunFamilies ("-" = empty list). */
@@ -8163,6 +8182,11 @@ public final class SocketInputState {
     /** Delegate so the injected poll needs no AuctionBot stub — see AuctionBot.java. */
     public static void tickAuctionBot() {
         AuctionBot.tick(_cachedCtx);
+    }
+
+    /** Delegate so the injected poll needs no Relog stub — see Relog.java (auto-reconnect). */
+    public static void tickRelog() {
+        Relog.tick();
     }
 
     public static void tickMainIdleWatch(Object controller) {

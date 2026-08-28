@@ -157,19 +157,28 @@ public class Mappings extends MappingsNames {
     }
 
     public static Object getService(Object clientMgr, Class<?> serviceClass) {
-        try {
-            // Search all methods (declared + inherited) for the one that takes a single Class param.
-            for (java.lang.reflect.Method m : clientMgr.getClass().getMethods()) {
-                Class<?>[] p = m.getParameterTypes();
-                if (p.length == 1 && p[0] == Class.class) {
-                    m.setAccessible(true);
-                    return m.invoke(clientMgr, serviceClass);
-                }
+        // Search all methods (declared + inherited) for one that takes a single Class
+        // param — and TRY each candidate rather than trusting the first: getMethods()
+        // order is unspecified, and a candidate can THROW in bad client states
+        // (relog, character select). Skipping a throwing candidate instead of dying
+        // is the hardening that first landed in AuctionBot's private copy; it lives
+        // here so every caller (PvP, feeder, consumables, forge, joiner) gets it.
+        boolean invokedAny = false;
+        for (java.lang.reflect.Method m : clientMgr.getClass().getMethods()) {
+            Class<?>[] p = m.getParameterTypes();
+            if (p.length == 1 && p[0] == Class.class) {
+                m.setAccessible(true);
+                try {
+                    Object s = m.invoke(clientMgr, serviceClass);
+                    invokedAny = true;
+                    if (s != null) return s;
+                } catch (Exception ignored) { }
             }
-            throw new RuntimeException("Cannot find service provider method on "
-                + clientMgr.getClass().getName());
-        } catch (RuntimeException e) { throw e; }
-        catch (Exception e) { throw new RuntimeException(e); }
+        }
+        if (invokedAny)
+            return null; // resolvable, but this service isn't registered right now (e.g. logged off)
+        throw new RuntimeException("Cannot find service provider method on "
+            + clientMgr.getClass().getName());
     }
 
     // ── LevelItem ─────────────────────────────────────────────────────────────

@@ -27,6 +27,15 @@ public class SKConfig {
     public static final int PARTY_SIZE = intProp("party_size", 4);
     public static final int BASE_PORT = intProp("udp_base_port", 40000);
 
+    /**
+     * A FRESH read of the config file — Relog re-reads per relog attempt so the
+     * relog_* lines apply without a client restart. The static fields above stay
+     * load-once snapshots; this keeps "where the config lives" defined once.
+     */
+    static java.util.Properties freshRead() {
+        return load();
+    }
+
     private static int intProp(String key, int dflt) {
         try {
             String v = PROPS.getProperty(key);
@@ -69,6 +78,13 @@ public class SKConfig {
                 w.println("# main listens here, alts take the next " + MAX_ALTS + ". multibox.py reads this file");
                 w.println("# too, so both sides stay in step. Change only on a port conflict. Default 40000.");
                 w.println("#udp_base_port=40000");
+                w.println();
+                w.println("# auto-relog (alts): while a full-auto mode is armed, a disconnected alt");
+                w.println("# logs back in using these. account:knight pairs (knight = the CHARACTER");
+                w.println("# to log back into, exact name) + the alts' shared login password.");
+                w.println("# Re-read on every relog attempt; edits need no client restart.");
+                w.println("#relog_alts=account1:Knight-One, account2:Knight-Two, account3:Knight-Three");
+                w.println("#relog_password=");
                 w.println();
                 w.println("# install_dir: which game install build.ps1 patches against (build-time only).");
                 w.println("#install_dir=C:\\path\\to\\Spiral Knights");

@@ -607,6 +607,51 @@ public class Patcher {
                 patchDxDismissLog(pool, outDir, DISMISS_LOG_CLASS);
                 patchDamageEvent(pool, outDir);
 
+                // ── Relog helper (auto-reconnect, 2026-08-25) ─────────────────────────
+                // The game's own "logoff -> logon -> re-pick the same knight" observer
+                // ('dk' in 20260824), used by ProjectXApp.en for server moves. Its
+                // (Client) method does the whole relogon: sets creds.language, sets the
+                // client credentials, stores the knight name into the app's auto-pick
+                // field, and starts logon through the logon window. Relog.java invokes it
+                // after a disconnect. Fingerprint: the fully REAL-NAMED ctor signature +
+                // the three field types — its sibling knight-SWITCH observer (dY) has no
+                // String field and a different ctor, so both criteria discriminate.
+                // SOFT-fail on purpose: a miss degrades Relog to plain Client.logon()
+                // (no knight re-pick) instead of failing the build — the core relog path
+                // is real-named-only and must survive any reshuffle.
+                String RELOG_HELPER = "";
+                String RELOG_HELPER_METHOD = "";
+                try {
+                        RELOG_HELPER = new ClassFinder(pcodeJar)
+                                        .packagePrefix("com.threerings.projectx.client")
+                                        .hasFieldType("Lcom/threerings/projectx/client/ProjectXApp;")
+                                        .hasFieldType("Lcom/threerings/projectx/data/ProjectXCredentials;")
+                                        .hasFieldType("Lcom/threerings/util/Name;")
+                                        .hasFieldType("Ljava/lang/String;")
+                                        .hasMethodDescriptorFragment(
+                                                        "(Lcom/threerings/projectx/client/ProjectXApp;Ljava/lang/String;"
+                                                                        + "Lcom/threerings/projectx/data/ProjectXCredentials;"
+                                                                        + "Lcom/threerings/util/Name;)")
+                                        .findUnique(); // never findOrByName — 'dk' is prime name-recycling bait
+                        // Its two (Client)V callbacks: only the relogon one touches
+                        // ProjectXCredentials (writes creds.language) — the other is window
+                        // status only. Empty fallback = treat as undiscovered.
+                        RELOG_HELPER_METHOD = methodByBodyRef(pool, RELOG_HELPER,
+                                        "(Lcom/threerings/presents/client/Client;)V", "ProjectXCredentials", "");
+                        if (RELOG_HELPER_METHOD.isEmpty())
+                                RELOG_HELPER = "";
+                } catch (Exception relogEx) {
+                        System.out.println("  WARNING: relog helper NOT found (" + relogEx.getMessage()
+                                        + ") — auto-reconnect degrades to plain logon without knight re-pick");
+                        RELOG_HELPER = "";
+                        RELOG_HELPER_METHOD = "";
+                }
+                discovered.put("RELOG_HELPER_CLASS", RELOG_HELPER);
+                discovered.put("RELOG_HELPER_METHOD", RELOG_HELPER_METHOD);
+                if (!RELOG_HELPER.isEmpty())
+                        System.out.println("  relog helper = " + RELOG_HELPER + "."
+                                        + RELOG_HELPER_METHOD + "(Client)");
+
                 // ── 4. Write MappingsNames.java with all discovered constants ─────────
                 // Patcher generates out/MappingsNames.java (static final Strings).
                 // Mod classes compile against it in the next build phase — values are
@@ -781,6 +826,8 @@ public class Patcher {
                 sis.addField(CtField.make("public static boolean autoAdvanceOn;", sis));
                 sis.addMethod(CtNewMethod.make(
                                 "public static void tickAuctionBot() {}", sis));
+                sis.addMethod(CtNewMethod.make(
+                                "public static void tickRelog() {}", sis));
                 sis.addMethod(CtNewMethod.make(
                                 "public static void tickDeathWatch(Object ctrl) {}", sis));
                 sis.addField(CtField.make("public static boolean routineShootActive;", sis));
@@ -1121,6 +1168,13 @@ public class Patcher {
                                                 "if (" + SOCKET_INPUT_STATE + ".autoAdvanceOn) {\n" +
                                                 "    try { " + SOCKET_INPUT_STATE + ".tickAutoAdvance((Object) " + SOCKET_INPUT_STATE + "._cachedCtx); } catch (Exception _skAA) {}\n" +
                                                 "}\n" +
+                                                // Auto-reconnect (Relog.java): on EVERY account — main AND alts —
+                                                // so it must sit OUTSIDE the isMainAccount block below (v1 sat
+                                                // inside it and alts never even detected a logoff). In the POLL
+                                                // because the logon screen has NO ticking scene — this is the only
+                                                // host that runs there. Self-gated (full-auto modes only) and
+                                                // self-throttled inside Relog.tick().
+                                                "try { " + SOCKET_INPUT_STATE + ".tickRelog(); } catch (Exception _skRL) {}\n" +
                                                 "if (" + SOCKET_INPUT_STATE + ".isMainAccount()) {\n" +
                                                 // Campaign idle dead-man's switch: MUST live in the poll, not the
                                                 // scene tick — the poll runs every GUI frame even with NO scene
@@ -1332,7 +1386,7 @@ public class Patcher {
                                                 "                " + SOCKET_INPUT_STATE + ".botTapReleaseAt = _skCn + 40L;\n" +
                                                 "                " + SOCKET_INPUT_STATE + ".botCyclePhase = 1;\n" +
                                                 "            } else if (_skCph == 1) {\n" +
-                                                // PRESSED -> release after the 40ms tap. Weapon 2: 2 taps 250ms apart,
+                                                // PRESSED -> release after the 40ms tap. Weapon 1: 2 taps 250ms apart,
                                                 // then a 150ms reload. Gun: 3 taps 100ms apart, then a 150ms reload.
                                                 "                if (_skCn >= " + SOCKET_INPUT_STATE + ".botTapReleaseAt) {\n" +
                                                 "                    this.__skAttackRelease(_skCx, _skCy);\n" +
@@ -1387,7 +1441,7 @@ public class Patcher {
                                                 "    " + SOCKET_INPUT_STATE + ".routineShieldHeld = false;\n" +
                                                 "    this.__skShieldRelease();\n" +
                                                 "}\n" +
-                                                // Stage-routine SHOOT: fire weapon 3 in quick taps toward
+                                                // Stage-routine SHOOT: fire weapon 2 in quick taps toward
                                                 // routineShootAngle at a fixed world target (independent of the
                                                 // combat bot; the routine sets isCombatBot=false during SHOOT).
                                                 "if (" + SOCKET_INPUT_STATE + ".routineShootActive || " + SOCKET_INPUT_STATE + ".routineShootHeld) {\n" +
@@ -1969,7 +2023,7 @@ public class Patcher {
                                 "    } catch (Exception _skMgE) {}\n" +
                                 "}\n";
 
-                // Alt: SHOOT reroute — fire weapon 3 at the broadcast target from this
+                // Alt: SHOOT reroute — fire weapon 2 at the broadcast target from this
                 // alt's own position (the follow block above is gated off while shooting).
                 template += "\nif (" + SIS + ".isRoutineShootAlt && !" + SIS + ".isMainAccount()) {\n" +
                                 "    try {\n" +

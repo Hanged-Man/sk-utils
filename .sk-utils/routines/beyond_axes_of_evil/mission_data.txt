@@ -1,3 +1,3 @@
 beyond_axes_of_evil 1 HARD
 # lockbox farm; we only run first floor. remember to equip nova driver on main; only way the skip works.
-3 | Construct, Slime, Undead
+2 | Construct, Slime, Undead
