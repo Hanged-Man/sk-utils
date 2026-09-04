@@ -4635,12 +4635,15 @@ public final class SocketInputState {
                     break;
                 }
                 case T_LOOT: {
-                    if (routineSub == 0) {
+                    if (routineSub == 0) { // path to (X,Y), clearing shrubs like MOVETO
                         if (pathTo(view, mp, tx, ty)) {
+                            blockClearStop();
                             isLootMode = true;
                             lootPlanned = false;
                             lootDoneLogged = false;
                             routineSetSub(1);
+                        } else {
+                            tickBreakableClear(controller, view, mp, routinePath); // shoot shrubs en route
                         }
                     } else if (lootDoneLogged) {
                         isLootMode = false;
@@ -6268,7 +6271,10 @@ public final class SocketInputState {
      * main: the nearest one within BLOCK_SHOOT_RANGE gets shot with weapon 2 (like
      * SHOOT) until it's gone. Movement is left to the caller — the main pushes up to
      * the block's collision and keeps firing until it breaks, then walks through.
-     * Called from MOVETO and LOOT only (NOT combat/KEY/GATE steps).
+     * Called from the loot-sweep driver and every routine step's PATH-IN leg
+     * (MOVETO/LOOT/BUTTON/COMBAT/... approaches) — NOT from combat orbit phases
+     * (it competes with the combat bot for the weapon) or carry steps (firing
+     * would drop the carry).
      */
     private static void tickBreakableClear(Object controller, Object view, float[] mp, PathFollow pf) {
         float[] target = nearestBreakableOnPath(view, mp, pf);

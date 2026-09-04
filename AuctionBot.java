@@ -119,17 +119,6 @@ public final class AuctionBot {
      * is toggled on.
      */
     static volatile int spentThisSession = 0;
-    /**
-     * Which single-argument service method is BUY OUT. The client jar never calls
-     * either candidate — `b(long,listener)` and `a(long,listener)` have no callers
-     * anywhere — so it is resolved by TRYING: `b` first, and on a server error the
-     * other one, remembering whichever succeeds. Safe to probe because it only ever
-     * runs on a listing that already matches a rule and sits under its price cap:
-     * if `b` is buyout we bought something we wanted, and if it turns out to be
-     * watch/cancel, nothing is lost (you cannot cancel someone else's auction).
-     */
-    private static String buyMethod = "b";
-    private static boolean buyMethodConfirmed = false;
 
     // ── seller state ─────────────────────────────────────────────────────────
     /** Set by the Ctrl+W hotkey (UDP "AUCTIONSELL"); consumed by {@link #tick}. */
@@ -712,11 +701,7 @@ public final class AuctionBot {
                 }
                 // Otherwise BID, but only while we are not already the high bidder.
                 // The bid amount is the listing's own next valid bid (Ba()), the same
-                // value the game's client passes; bidding our cap outright would just
-                // pay the cap, since the high bid wins at its own price.
-                // This is the ONLY path for bid-only (no-buyout) listings. Each skip
-                // is logged with its reason so a "why won't it bid?" is answerable from
-                // one live sweep instead of guessed at.
+                // value the game's client passes.
                 if ("HIGH_BIDDER".equals(status)) {
                     log("[auction] no bid on " + name + " id=" + id + ": already HIGH_BIDDER");
                     continue;
@@ -804,35 +789,30 @@ public final class AuctionBot {
                 log("[auction] service unavailable — dropping " + (a.buyout ? "buy" : "bid") + " on " + a.name);
                 return;
             }
+            // ONE service call for both. The game has no dedicated buyout method, its own Buy Now
+            // button just bids the buyout price.
+            Method m = null;
+            for (Method cand : svc.getClass().getMethods()) {
+                Class<?>[] p = cand.getParameterTypes();
+                if (p.length == 3 && p[0] == long.class && p[1] == int.class) {
+                    m = cand;
+                    break;
+                }
+            }
+            if (m == null) {
+                log("[auction] no bid method on the service");
+                return;
+            }
+            m.invoke(svc, Long.valueOf(a.auctionId), Integer.valueOf(a.amount), listenerFor(a));
             if (a.buyout) {
-                Method m = findSvcMethod(buyMethod, new Class<?>[] { long.class, null });
-                if (m == null) {
-                    log("[auction] no buyout method on the service");
-                    return;
-                }
-                m.invoke(svc, Long.valueOf(a.auctionId), listenerFor(a));
+                boughtIds.add(Long.valueOf(a.auctionId)); // buy once; bids may repeat when outbid
                 log("[auction] BUY " + a.name + " for " + a.amount + "cr (id=" + a.auctionId
-                        + ", via '" + buyMethod + "'" + (buyMethodConfirmed ? "" : ", UNCONFIRMED") + ")");
+                        + ", bid at the buyout price)");
             } else {
-                Method m = null;
-                for (Method cand : svc.getClass().getMethods()) {
-                    Class<?>[] p = cand.getParameterTypes();
-                    if (p.length == 3 && p[0] == long.class && p[1] == int.class) {
-                        m = cand;
-                        break;
-                    }
-                }
-                if (m == null) {
-                    log("[auction] no bid method on the service");
-                    return;
-                }
-                m.invoke(svc, Long.valueOf(a.auctionId), Integer.valueOf(a.amount), listenerFor(a));
                 myBids.put(Long.valueOf(a.auctionId), Integer.valueOf(a.amount));
                 log("[auction] BID " + a.amount + "cr on " + a.name + " (id=" + a.auctionId
                         + ", cap " + a.ruleMax + ")");
             }
-            if (a.buyout)
-                boughtIds.add(Long.valueOf(a.auctionId)); // buy once; bids may repeat when outbid
             spentThisSession += a.amount;
         } catch (Exception e) {
             log("[auction] action error on " + a.name + ": " + e);
@@ -849,17 +829,7 @@ public final class AuctionBot {
         return null;
     }
 
-    /** A service method by name whose first parameter is long and which takes a listener. */
-    private static Method findSvcMethod(String name, Class<?>[] shape) {
-        for (Method m : svc.getClass().getMethods()) {
-            Class<?>[] p = m.getParameterTypes();
-            if (p.length == 2 && p[0] == long.class && name.equals(m.getName()))
-                return m;
-        }
-        return null;
-    }
-
-    /** Result listener that records success and, for buyouts, calibrates which method works. */
+    /** Result listener that logs the outcome and rolls back the bookkeeping on failure. */
     private static Object listenerFor(final Action a) throws Exception {
         Class<?> listenerCls = Class.forName(LISTENER_CLASS);
         return Proxy.newProxyInstance(AuctionBot.class.getClassLoader(),
@@ -875,19 +845,7 @@ public final class AuctionBot {
                                 boughtIds.remove(Long.valueOf(a.auctionId));
                             else
                                 myBids.remove(Long.valueOf(a.auctionId));
-                            if (a.buyout && !buyMethodConfirmed && !isTransientThrottle(why)) {
-                                // Wrong candidate: switch to the other single-arg method
-                                // and let the next sweep retry this listing. A transient
-                                // throttle is NOT evidence about the method — never flip on it.
-                                buyMethod = "b".equals(buyMethod) ? "a" : "b";
-                                log("[auction] buyout method '" + (("b".equals(buyMethod)) ? "a" : "b")
-                                        + "' rejected — trying '" + buyMethod + "' next");
-                            }
                         } else {
-                            if (a.buyout && !buyMethodConfirmed) {
-                                buyMethodConfirmed = true;
-                                log("[auction] buyout confirmed on service method '" + buyMethod + "'");
-                            }
                             log("[auction] " + (a.buyout ? "BOUGHT " : "BID OK ") + a.name
                                     + " for " + a.amount + "cr — session spend " + spentThisSession + "cr");
                         }

@@ -11,7 +11,7 @@
 - Run **`.\build.ps1`**. It auto-detects your game install; override with `-InstallDir <path>`,
   the `SK_INSTALL_DIR` env var, or `install_dir=` in config.properties. It should output
   `sk-utils-mod.zip`.
-- The mod **auto-heals itself between SK game updates**, so *all you need to
+- The mod typically **auto-heals itself between SK game updates**, so *all you need to
   do in most cases* is **rebuild it using `build.ps1` and load the new `sk-utils-mod.zip` into KL as a mod.**
 - To pass the source on, run **`.\package-source.ps1`** → `sk-utils-src.zip`. It packs an
   explicit include list (sources, build scripts, multibox.py, config template, README).
@@ -20,8 +20,8 @@
 
 ## -1. A little backstory and some words of warning
 
-**UPDATE: For the last time! This mod is on *LIFE SUPPORT*. I won't be finishing the FSC routine for autopilot,
-I won't be adding autopilot for random floor layouts, and I won't be adding Mac support. Geez, people.**
+**UPDATE: For the last time! I won't be finishing the FSC routine for autopilot,
+I won't be adding autopilot for random floor layouts, and I won't be adding Mac support.**
 If there are any genuine bugs or problems with the mod *then* open an issue on the Github. 
 
 
@@ -78,10 +78,6 @@ The only way you get banned is if you attract enough attention for a dev/GM to *
   routines that I used to use (Axes of Evil, Snarby, Beyond Axes of Evil for when mirrored farming was briefly a thing).
 
   The RJP and FSC routines in the routines folder were *never finished*.
-
-  Just so I don't have to answer this again in DMs, **I couldn't get full-auto FSC to work, and no, I
-  will not be returning to do more dev work on this, lol. If you want it please try and figure it out yourself.**
-  As for RJP, I just got lazy. :P
   
   Feel free to develop your own autopilot routines!
 
