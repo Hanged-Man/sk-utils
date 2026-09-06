@@ -257,13 +257,18 @@ routines/
     substrings **this mission only** treats as hazardous terrain.
     Don't set or include this line if you don't know what you're doing.
     This is for dungeons that mark randomised hazard spawn points with generic placeables.
-  - `2 | Construct, Slime, Undead` — The mod was designed for everyone to have an
-    **autogun-line gun in weap slot 1** and a **blaster-line gun in weap slot 2**. The use of other weapons\
-    will require you to dig into my source code to customize the weapon firing cadences.
-    By default, bots will shoot at enemies with weapon 1. This line lets you specify which monster families,
-    if any, your knights will switch to weapon 2 against.
-    `2 |` with nothing after the bar = never switch (weapon 1 always).
-    **No line at all = the default Construct, Slime, Undead trio shown above**.
+  - `1 | <Autogun or Blaster> | <families>` and `2 | <Autogun or Blaster> | <families>` —
+    per-weapon-slot combat config. The families list says which monster families that weapon
+    is used against; the middle token picks that slot's **firing cadence**: `Autogun` =
+    2 taps 250 ms apart, `Blaster` = 3 taps 100 ms apart (both + 150 ms reload). Ideally the
+    two lines cover all six families (`Beast, Construct, Fiend, Gremlin, Slime, Undead`),
+    but anything unlisted (or listed on **both** lines — that logs a warning) defaults to
+    **weapon 1**, so only the `2` line's families actually switch weapons.
+    - The cadence token is optional: `2 | Construct, Slime, Undead` still works and keeps
+      the defaults — **weap slot 1 = Autogun cadence, weap slot 2 = Blaster cadence**.
+    - `2 |` with nothing after the bar = never switch (weapon 1 always).
+    - **No weapon line at all = the default `2 | Construct, Slime, Undead`** with default cadences.
+    - The old `3 | ...` spelling (pre slot-shift) is no longer accepted.
 - **Format of routine files:** one step per line — `TYPE <params...>`. `TYPE` is case-insensitive; every
   command's params start with world-coordinate `X Y` (1 tile = 1.0); some take more
   (e.g. `WAIT X Y SECONDS`). `#` starts a comment; blank lines ignored. More on this below.
@@ -276,8 +281,9 @@ routines/
 Stuff to keep in mind when you're designing new routines or revising old ones:
 
 - **Only the MAIN reads the routine.** Alts breadcrumb-follow the main's exact path.
-- The mod was designed for everyone to have a **autogun-line gun in weap slot 1** and a **blaster-line gun in weap slot 2**.
-  You'll have to dig into my code if you want this to work with any other weapons...sorry!
+- The combat bot supports two firing cadences — **autogun-line** (2-tap) and **blaster-line** (3-tap) guns —
+  assignable per weapon slot in `mission_data.txt` (defaults: autogun in weap slot 1, blaster in weap slot 2).
+  Other weapon types (swords, bombs, other gun lines) still need source-level cadence work...sorry!
 - **Movement is driven by A\*** over a walkability grid. Breakable shrubs/stone, explosive,
   crystal and treasure blocks, as well as block clusters connected to ghost blocks are considered walkable
   (shot on approach); unbreakable blocks, monster objects, levers and heart treasure blocks are routed around.

@@ -18,7 +18,7 @@ public final class SocketInputState {
     private static volatile boolean started;
 
     // ── Control scheme (see KeyBinds.java) ───────────────────────────────────
-    // Every key/button the mod synthesises or watches, resolved from the GAME's
+    // Every key/button the mod synthesizes or watches, resolved from the GAME's
     // own bindings at startup instead of being hardcoded, so a rebind in the
     // options screen doesn't break the bots. These fields live HERE (not on
     // KeyBinds) because the Patcher-injected input code reads them, and injected
@@ -164,7 +164,7 @@ public final class SocketInputState {
     public static volatile boolean botCycleActive = false; // a firing cycle is in progress
     public static volatile int botCyclePhase = 0;          // 0 idle, 1 pressed, 2 waiting
     public static volatile int botTapIndex = 0;            // gun taps fired so far this cycle
-    public static volatile boolean botCycleWeapon2 = false; // cadence latched at this cycle's start (true = weapon 1)
+    public static volatile boolean botCycleWeapon2 = false; // slot latched at this cycle's start (true = weapon 1; cadence in botCycleBlaster)
     // Shield dodge: hold shield while an enemy bullet is within 2 tiles.
     public static volatile boolean botShieldHold = false; // a dangerous bullet is near
     public static volatile boolean botShieldHeld = false; // poll has X held for shield
@@ -192,27 +192,46 @@ public final class SocketInputState {
     private static final float LOOT_ARRIVE_SQ = 0.36f;      // (0.6 tile)^2 magnet-cluster arrival
     private static final float LOOT_STEP_ARRIVE_SQ = 0.25f; // (0.5 tile)^2 step-on drop arrival (no magnet — land on it)
     private static final int LOOT_MAX_EXACT = 15;         // exact Held-Karp TSP up to this many waypoints
+    // detour filter: a destination whose REAL A* walking path is
+    // more than LOOT_DETOUR_RATIO x its straight-line distance from the sweep
+    // origin is skipped at plan time. SLACK is an
+    // absolute grace (tiles) so grid quantisation on very short paths can never
+    // trip the ratio.
+    private static final float LOOT_DETOUR_RATIO = 2.0f;
+    private static final float LOOT_DETOUR_SLACK = 1.0f;
     // 1 tile ≈ 1.0 world unit in tudey; compared squared. Tunable.
     private static final float BULLET_SHIELD_RADIUS_SQ = 4.0f; // (2 tiles)^2
     private static java.lang.reflect.Method cachedBulletHitMethod = null; // Bullet.e(Actor)
-    // Weapon-1 mode: against enemies NOT in a weapon-2 family (below), use
-    // weapon 1 with the 2-tap cadence (40ms taps 250ms apart, 150ms reload).
-    // Otherwise use weapon 2 (gun) with the 3-tap cadence (100ms apart, 150ms
-    // reload). (The old bomb mode is dummied out.) Decided each cycle by the
-    // CLOSEST enemy's family.
+    // Weapon choice: the CLOSEST enemy's family decides the slot each cycle —
+    // family in gunFamilies → weapon 2, anything else (unknowns included) →
+    // weapon 1. Both the family map and each slot's FIRING CADENCE are
+    // per-mission DATA (loadMissionWeaponConfig), from optional mission_data.txt
+    // lines:
     //
-    // Weapon 2 is ALWAYS the bot's SIDEARM: the families weapon 1 is INEFFECTIVE
-    // against are per-mission DATA — an optional "2 | Construct, Slime, Undead"
-    // line in mission_data.txt (loadMissionWeaponConfig), broadcast to the alts as
-    // GUNFAMILIES so every client's combat bot switches identically. This default
-    // = the old hardcoded trio, kept for missions without the line and for manual
-    // Ctrl+B combat outside a routine.
+    //     1 | <Autogun|Blaster> | <families weapon 1 handles>
+    //     2 | <Autogun|Blaster> | <families weapon 2 handles>
+    //
+    // The cadence token is optional (absent → slot 1 Autogun, slot 2 Blaster):
+    // Autogun = 2 taps 250ms apart, Blaster = 3 taps 100ms apart (both 40ms
+    // holds + a 150ms reload; timings inline in the Patcher poll block). The
+    // "1" line's families are explicit weapon-1 assignments — same as the
+    // default for unlisted families, but a family on BOTH lines logs a warning
+    // and weapon 1 wins. NO weapon line at all = this legacy default trio, kept
+    // for missions without one and for manual Ctrl+B combat outside a routine.
+    // All of it is broadcast to the alts as GUNFAMILIES so every client's
+    // combat bot switches and fires identically.
     // NOTE the "Weapon2" in the bot field names below is HISTORICAL: it means the
     // PRIMARY (single-tap) weapon, which sat in-game slot 2 until the 2026-08-27
     // slot shift moved everything down — primary is now in-game weapon 1, the
     // sidearm/gun in-game weapon 2. The names stay because they are Patcher-pinned.
     private static volatile String[] gunFamilies = { "construct", "slime", "undead" };
-    public static volatile boolean botWeapon2Mode = false; // committed cadence; poll latches it at cycle start (true = PRIMARY weapon)
+    public static volatile boolean botWeapon2Mode = false; // committed slot; poll latches it at cycle start (true = PRIMARY weapon)
+    // Per-slot cadence config (true = Blaster 3-tap, false = Autogun 2-tap),
+    // and the cadence latched for the CURRENT firing cycle — set alongside
+    // botCycleWeapon2 in botSelectWeaponForCycle, read by the poll's tap logic.
+    private static volatile boolean slot1CadenceBlaster = false; // weapon 1 default: Autogun
+    private static volatile boolean slot2CadenceBlaster = true;  // weapon 2 default: Blaster
+    public static volatile boolean botCycleBlaster = false; // Patcher-pinned (poll reads it)
     private static volatile int botLastWeaponSlot = -1; // slot we believe is equipped; -1 = unknown
     private static volatile long botNextTickAt = 0L;
     private static volatile long botWeaponSwitchAt = 0L;
@@ -222,10 +241,11 @@ public final class SocketInputState {
     private static final long BOT_TICK_INTERVAL_MS = 100L;
     private static final long BOT_WEAPON_SWITCH_MS = 400L;  // periodic same-slot re-assert
     private static final long BOT_WEAPON_SETTLE_MS = 300L;  // fire hold after a switch
-    // Cycle timings live inline in the Patcher poll block: gun (weapon 2) = 3 taps
-    // of 40ms held / 100ms apart, then a 150ms reload; weapon 1 = 2 taps of 40ms
-    // held / 250ms apart, then a 150ms reload. Kept there because the poll (a
-    // separate class) cannot read SocketInputState's private constants.
+    // Cycle timings live inline in the Patcher poll block, keyed on the latched
+    // botCycleBlaster: Blaster cadence = 3 taps of 40ms held / 100ms apart,
+    // Autogun cadence = 2 taps of 40ms held / 250ms apart, both then a 150ms
+    // reload. Kept there because the poll (a separate class) cannot read
+    // SocketInputState's private constants.
     private static final int PRIMARY_WEAPON_SLOT = 0; // in-game weapon 1 (0-indexed; the single-tap weapon — was slot 2 pre-2026-08-27)
     private static final int GUN_WEAPON_SLOT = 1;     // in-game weapon 2 (0-indexed; the SIDEARM/gun — was slot 3)
     // Vertical foreshortening of the world→screen aim: the gameplay camera sits
@@ -343,7 +363,7 @@ public final class SocketInputState {
     /**
      * Writes useful debug information about socket binding and packet
      * sending/receiving to ~\.sk-utils\debug.log.
-     * 
+     *
      * @param msg The debug message to be written to the log.
      */
     static void debugFile(String msg) { // package-private: MissionStats uses it
@@ -1139,14 +1159,20 @@ public final class SocketInputState {
                 }
 
                 if ("GUNFAMILIES".equals(key)) {
-                    // Per-mission weapon-2 families from the main (see gunFamilies /
-                    // loadMissionWeaponConfig). "-" = empty list (weapon 1 always).
+                    // Per-mission weapon config from the main (see gunFamilies /
+                    // loadMissionWeaponConfig): "<fams|-> <w1 cadence> <w2 cadence>".
+                    // "-" = empty family list (weapon 1 always); absent cadence
+                    // tokens fall back to the defaults (w1 autogun, w2 blaster).
                     if (parts.length >= 2 && !"-".equals(parts[1]))
                         gunFamilies = parts[1].toLowerCase(Locale.ROOT).split(",");
                     else
                         gunFamilies = new String[0];
+                    slot1CadenceBlaster = parts.length >= 3 && "blaster".equals(parts[2]);
+                    slot2CadenceBlaster = parts.length < 4 || !"autogun".equals(parts[3]);
                     if (debug)
-                        debugFile("[combatbot] weapon-2 families <- " + String.join(",", gunFamilies));
+                        debugFile("[combatbot] weapon-2 families <- " + String.join(",", gunFamilies)
+                                + "; cadences w1=" + (slot1CadenceBlaster ? "blaster" : "autogun")
+                                + " w2=" + (slot2CadenceBlaster ? "blaster" : "autogun"));
                     continue;
                 }
 
@@ -1804,9 +1830,9 @@ public final class SocketInputState {
                 return;
             }
 
-            // Weapon choice by the CLOSEST enemy's family: Construct/Slime/Undead
-            // → weapon 2 (gun, 3-tap cadence); anything else → weapon 1 (2-tap
-            // cadence).
+            // Weapon choice by the CLOSEST enemy's family: a gunFamilies family
+            // → weapon 2; anything else (unknowns included) → weapon 1. Each
+            // slot fires with its configured cadence (see slot1/2CadenceBlaster).
             boolean useWeapon2 = !isGunFamily(closest);
 
             // Aim at the closest enemy. No camera rotation (azimuth 0), so the
@@ -1922,12 +1948,17 @@ public final class SocketInputState {
     }
 
     /**
-     * Selects the weapon matching the cadence just latched for the current firing
-     * cycle (weapon 1 vs gun). Called from the poll at the START of every cycle so
-     * a weapon/cadence mismatch can never persist beyond a single cycle. Runs on
-     * the local account's controller (dungeonClient), same GL thread as the tick.
+     * Latches the cadence for the slot just committed for the current firing
+     * cycle (botCycleWeapon2, true = weapon 1) and selects the matching weapon.
+     * Called from the poll at the START of every cycle so a weapon/cadence
+     * mismatch can never persist beyond a single cycle. Runs on the local
+     * account's controller (dungeonClient), same GL thread as the tick.
      */
     public static void botSelectWeaponForCycle() {
+        // Latch the cadence BEFORE the controller guard: the poll has already
+        // committed botCycleWeapon2 for this cycle, so the tap timing must
+        // follow it even when the select itself can't be issued.
+        botCycleBlaster = botCycleWeapon2 ? slot1CadenceBlaster : slot2CadenceBlaster;
         Object ctrl = dungeonClient;
         if (ctrl == null)
             return;
@@ -2711,6 +2742,7 @@ public final class SocketInputState {
      */
     private static void planLootRoute(Object view, float sx, float sy) {
         java.util.List<float[]> pts = gatherLootPickups(view, sx, sy); // {x,y,stepOn}
+        pts = dropDetours(view, sx, sy, pts, "loot", 0f); // skip winding/unreachable pickups
         lootRouteIdx = 0;
         lootWaypointDeadline = 0L;
         lootPath.tgtX = Float.NaN; // force an A* replan for the new route
@@ -2756,6 +2788,70 @@ public final class SocketInputState {
         lootRouteArriveSq = ra;
         debugFile("[loot] planned " + pts.size() + " pickups (" + magnet.size() + " magnet, " + so
                 + " step-on) -> " + n + " waypoints (+return)");
+    }
+
+    /**
+     * Drops every destination ({@code float[]{x, y, ...}}) in {@code pts} that is a
+     * DETOUR from the sweep origin (sx,sy) — walking path longer than
+     * LOOT_DETOUR_RATIO x straight-line (+ SLACK) — or unreachable, and logs what
+     * it dropped. Destinations within sqrt(exemptSq) of the origin are kept
+     * untested (0 = none): TREASURESWEEP passes its firing range, since a block
+     * already in range is shot without any walking. Returns {@code pts} unchanged
+     * when there is no scene model yet — it never filters blind.
+     */
+    private static java.util.List<float[]> dropDetours(Object view, float sx, float sy,
+            java.util.List<float[]> pts, String who, float exemptSq) {
+        Object model = sceneModelOf(view);
+        if (model == null || pts.isEmpty())
+            return pts;
+        java.util.List<float[]> keep = new java.util.ArrayList<float[]>(pts.size());
+        int unreachable = 0, detour = 0;
+        for (float[] p : pts) {
+            float dx = p[0] - sx, dy = p[1] - sy;
+            float straightSq = dx * dx + dy * dy;
+            if (exemptSq > 0f && straightSq <= exemptSq) {
+                keep.add(p);
+                continue;
+            }
+            float straight = (float) Math.sqrt(straightSq);
+            float walk = walkDistance(model, view, sx, sy, p[0], p[1]);
+            if (walk < 0f) {
+                unreachable++;
+                continue;
+            }
+            if (walk > LOOT_DETOUR_RATIO * straight + LOOT_DETOUR_SLACK) {
+                detour++;
+                if (debug)
+                    debugFile("[" + who + "] detour skip (" + Reflect.fmt(p[0]) + "," + Reflect.fmt(p[1])
+                            + "): walk " + Reflect.fmt(walk) + " > " + LOOT_DETOUR_RATIO + "x straight "
+                            + Reflect.fmt(straight));
+                continue;
+            }
+            keep.add(p);
+        }
+        if (unreachable + detour > 0)
+            debugFile("[" + who + "] detour filter dropped " + detour + " winding + " + unreachable
+                    + " unreachable of " + pts.size() + " destination(s)");
+        return keep;
+    }
+
+    /**
+     * Real walking distance (A* polyline length, tiles) from (sx,sy) to (gx,gy) on
+     * the live grid — the same path the driver would follow — or -1 if unreachable.
+     * Plan-time only: one A* per call.
+     */
+    private static float walkDistance(Object model, Object view, float sx, float sy, float gx, float gy) {
+        float[][] wp = findPathWorld(model, view, sx, sy, gx, gy);
+        if (wp == null || wp.length == 0)
+            return -1f;
+        float len = 0f, px = sx, py = sy;
+        for (int i = 0; i < wp.length; i++) {
+            float dx = wp[i][0] - px, dy = wp[i][1] - py;
+            len += (float) Math.sqrt(dx * dx + dy * dy);
+            px = wp[i][0];
+            py = wp[i][1];
+        }
+        return len;
     }
 
     /** Target pickups within 10 tiles of (sx,sy), each as {x, y, stepOn} (stepOn=1 for no-magnet drops). */
@@ -3182,13 +3278,6 @@ public final class SocketInputState {
      * blocks, CRYSTAL blocks (Block/Crystal — also a button/lever covering in the
      * sweeps), and TREASURE blocks (Block/Treasure). "block/stone" does NOT catch
      * "Block/Mineral/Moonstone" (that's "mineral/moonstone").
-     *
-     * <p>Treasure is here (user-directed) because a treasure-block ACTOR is not a grid
-     * obstacle: A* plans straight through its cell while the block physically stops the
-     * main, which is the "pathTo pushes at a waypoint it can never reach" stall. Shooting
-     * it clears the path and drops the loot. HEART treasure blocks are excluded — those
-     * are placeables that already block the grid (placeableIsObstacle), so A* routes
-     * around them and firing at one would just burn the clear-timer.
      */
     private static boolean isBreakableBlock(Object actor) {
         String nm = Reflect.actorConfigName(actor).toLowerCase(Locale.ROOT);
@@ -3255,16 +3344,9 @@ public final class SocketInputState {
 
     /**
      * Cells whose 1x1 square REALLY intersects the entry's collision shape — not just
-     * its bounding rect. The Gnarled Tree base that motivated this is a Compound of 11
-     * circles (a trunk + five root arms) whose BOUNDS are 11x11 = 121 tiles, while the
-     * star between the arms is open ground: rect-filling it swallowed the whole
-     * elevator approach on gloaming_wildwoods_ruins, and a character standing in one of
-     * the (real, walkable) gaps had its start cell blocked — so EVERY pathTo failed and
-     * TREASURESWEEP/ELEVATOR "unreachable"-skipped into an idle.
-     *
+     * its bounding rect.
      * <p>Cell rects are inset slightly so grazing a shape's edge doesn't block the
-     * neighbouring cell (mirrors the old floor(max - 1e-4) behavior for exact-integer
-     * rects). Falls back to the plain bounding-rect fill if the intersection API can't
+     * neighbouring cell. Falls back to the plain bounding-rect fill if the intersection API can't
      * be resolved.
      */
     private static int[][] preciseFootprintCells(Object entry, Object cfgmgr) {
@@ -3438,16 +3520,6 @@ public final class SocketInputState {
      * Cells holding a GHOST block ("Block/Ghost") — the ghost ITSELF, never the
      * blocks wired to it. Marked 'G' in the Ctrl+D walk grid, purely as an authoring
      * aid: route a step within 4 tiles of a G and block-clearing opens that cluster.
-     *
-     * DELIBERATELY NOT a pathing input (user-directed, after testing a flood-fill
-     * version): the blocks connected to a ghost can form a long, winding wall that
-     * only opens once it is shot. Pre-marking that whole cluster walkable let A*
-     * beeline THROUGH the standing wall — including when the target was the ghost
-     * block itself, which then became unreachable. So the cluster stays solid until
-     * it is actually destroyed (its block actors leave the actor map, and
-     * actorBlockedCells is resampled per plan). Opening it is left to
-     * tickBreakableClear, which treats any ghost within BLOCK_SHOOT_RANGE as a target
-     * with no on-path test — that also re-opens a gate that respawns mid-crossing.
      *
      * Both layers are read: a ghost may be actor-only (the whole
      * gloaming_wildwoods_ruins gate is), scene-model-only, or both.
@@ -4008,7 +4080,7 @@ public final class SocketInputState {
     private static boolean campaignRestartPending = false; // in the terminal→town→relaunch→lobby sequence
     private static int campaignRestartPhase = 0;           // 0 = await town, 1 = await the fresh lobby
     private static long campaignTownSince = 0L;            // when town (no LevelPartyObject) was first seen (settle start)
-    // PARTIAL RUNS (user-directed 2026-07-29). mission_data's numFloors is AUTHORITATIVE:
+    // PARTIAL RUNS. mission_data's numFloors is AUTHORITATIVE:
     // set it below the mission's real floor count and the cycle treats that many floors as
     // a complete run — repeating floor 1 can pay better than clearing the whole mission. The
     // catch is that the mission is then still LIVE when the routine list runs out, so the
@@ -7548,7 +7620,7 @@ public final class SocketInputState {
 
     /** Fills tswX/tswY/tswCount with treasure-block positions within sqrt(radiusSq) tiles of (cx,cy), nearest-first. */
     private static void tswScan(Object view, final float cx, final float cy, float radiusSq) {
-        java.util.ArrayList<float[]> found = new java.util.ArrayList<float[]>();
+        java.util.List<float[]> found = new java.util.ArrayList<float[]>();
         try {
             Object actorMap = Reflect.readObjectFieldNullable(view, MappingsNames.ACTOR_MAP_FIELD);
             if (actorMap != null) {
@@ -7567,6 +7639,8 @@ public final class SocketInputState {
             }
         } catch (Exception e) {
         }
+        // Skip pocketed/winding blocks up front; in-range blocks are exempt (shot without walking).
+        found = dropDetours(view, cx, cy, found, "routine", TSW_SHOOT_RANGE_SQ);
         found.sort(new java.util.Comparator<float[]>() {
             public int compare(float[] a, float[] b) {
                 float da = (a[0] - cx) * (a[0] - cx) + (a[1] - cy) * (a[1] - cy);
@@ -7973,20 +8047,23 @@ public final class SocketInputState {
     }
 
     /**
-     * Per-mission weapon-2 (sidearm) families, from an optional
-     * {@code 2 | Construct, Slime, Undead} line in mission_data.txt: the monster
-     * families weapon 1 is ineffective against, so the combat bot (main + alts)
-     * switches to weapon 2 when the closest enemy is one of them. The leading
-     * {@code 2} names the sidearm slot ({@code 3} is still accepted — the
-     * pre-2026-08-27 spelling, from before the slot shift — so an old line keeps
-     * working instead of silently falling back to the default families).
-     * {@code 2 |} with nothing after the bar = never switch
-     * (weapon 1 for everything). NO line at all = the legacy default trio, so
-     * existing missions behave exactly as before. Loaded on the MAIN at Ctrl+R;
-     * pushed to the alts via the GUNFAMILIES broadcast (see gunFamilies).
+     * Per-mission weapon config from optional mission_data.txt lines
+     * {@code <slot> | <Autogun|Blaster> | <families>} (slot 1 or 2; the middle
+     * cadence token is optional — {@code 2 | Construct, Slime, Undead} still
+     * parses, defaulting slot 1 to Autogun 2-tap and slot 2 to Blaster 3-tap).
+     * The "2" line's families are the ones the combat bot (main + alts) switches
+     * to weapon 2 for; every other family — the "1" line's and any unlisted one —
+     * gets weapon 1, so an underdetermined map just biases to weapon 1. A family
+     * on BOTH lines logs a warning and weapon 1 wins. {@code 2 |} with no
+     * families = never switch. NO weapon line at all = the legacy default trio
+     * with default cadences, so config-less missions behave as before. The first
+     * line seen per slot wins. (The pre-2026-08-27 {@code 3 |} spelling is no
+     * longer accepted.) Loaded on the MAIN at Ctrl+R; pushed to the alts via the
+     * GUNFAMILIES broadcast (see gunFamilies).
      */
     private static void loadMissionWeaponConfig(File missionData) {
-        String[] fams = { "construct", "slime", "undead" }; // legacy default (no line)
+        java.util.ArrayList<String> fams1 = null, fams2 = null; // null = no line for that slot
+        boolean cad1 = false, cad2 = true; // cadence defaults: w1 Autogun, w2 Blaster
         try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(missionData))) {
             String line;
             while ((line = br.readLine()) != null) {
@@ -7994,32 +8071,68 @@ public final class SocketInputState {
                 if (h >= 0)
                     line = line.substring(0, h);
                 line = line.trim();
-                int bar = line.indexOf('|');
-                if (bar < 0)
+                String[] seg = line.split("\\|", -1);
+                String slotTag = seg[0].trim();
+                boolean isSlot1 = "1".equals(slotTag), isSlot2 = "2".equals(slotTag);
+                if (seg.length < 2 || (!isSlot1 && !isSlot2))
                     continue;
-                String slotTag = line.substring(0, bar).trim();
-                if (!"2".equals(slotTag) && !"3".equals(slotTag)) // "3" = pre-shift spelling
-                    continue;
+                if (isSlot1 ? fams1 != null : fams2 != null)
+                    continue; // first line per slot wins
+                // Optional cadence token between the slot and the families.
+                String second = seg[1].trim().toLowerCase(Locale.ROOT);
+                boolean blaster = "blaster".equals(second);
+                String famsSeg = (blaster || "autogun".equals(second))
+                        ? (seg.length >= 3 ? seg[2] : "")
+                        : seg[1];
                 java.util.ArrayList<String> out = new java.util.ArrayList<String>();
-                for (String s : line.substring(bar + 1).split(",")) {
+                for (String s : famsSeg.split(",")) {
                     s = s.trim().toLowerCase(Locale.ROOT);
                     if (!s.isEmpty())
                         out.add(s);
                 }
-                fams = out.toArray(new String[0]);
-                break;
+                if (isSlot1) {
+                    fams1 = out;
+                    if (blaster || "autogun".equals(second))
+                        cad1 = blaster;
+                } else {
+                    fams2 = out;
+                    if (blaster || "autogun".equals(second))
+                        cad2 = blaster;
+                }
             }
         } catch (Exception e) {
         }
+        String[] fams;
+        if (fams1 == null && fams2 == null) {
+            fams = new String[] { "construct", "slime", "undead" }; // legacy default (no lines)
+        } else {
+            // Weapon 2 gets exactly the "2" line's families; a family the "1" line
+            // also claims is a CONFLICT — weapon 1 wins (same bias as unknowns).
+            java.util.ArrayList<String> out = (fams2 == null)
+                    ? new java.util.ArrayList<String>()
+                    : new java.util.ArrayList<String>(fams2);
+            if (fams1 != null)
+                for (String s : fams1)
+                    if (out.remove(s))
+                        debugFile("[campaign] WARNING: family '" + s
+                                + "' on both weapon lines — weapon 1 wins");
+            fams = out.toArray(new String[0]);
+        }
         gunFamilies = fams;
+        slot1CadenceBlaster = cad1;
+        slot2CadenceBlaster = cad2;
         debugFile("[campaign] weapon-2 families: "
-                + (fams.length == 0 ? "(none — weapon 1 always)" : String.join(",", fams)));
+                + (fams.length == 0 ? "(none — weapon 1 always)" : String.join(",", fams))
+                + "; cadences w1=" + (cad1 ? "blaster" : "autogun")
+                + " w2=" + (cad2 ? "blaster" : "autogun"));
     }
 
-    /** The GUNFAMILIES broadcast payload for the current gunFamilies ("-" = empty list). */
+    /** The GUNFAMILIES broadcast payload: {@code <fams|-> <w1 cadence> <w2 cadence>}. */
     private static String gunFamiliesPayload() {
         String[] fams = gunFamilies;
-        return fams.length == 0 ? "-" : String.join(",", fams);
+        return (fams.length == 0 ? "-" : String.join(",", fams))
+                + " " + (slot1CadenceBlaster ? "blaster" : "autogun")
+                + " " + (slot2CadenceBlaster ? "blaster" : "autogun");
     }
 
     private static String firstConfigLine(File f) {

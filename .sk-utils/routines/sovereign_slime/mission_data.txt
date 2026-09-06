@@ -1,2 +1,3 @@
-sovereign_slime 2 HARD
-2 | Construct, Undead, Fiend
+sovereign_slime 2 EASY
+1 | Blaster | Slime
+2 | Blaster | Construct, Undead, Fiend

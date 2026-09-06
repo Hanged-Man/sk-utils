@@ -794,6 +794,7 @@ public class Patcher {
                 sis.addField(CtField.make("public static int botCyclePhase;", sis));
                 sis.addField(CtField.make("public static int botTapIndex;", sis));
                 sis.addField(CtField.make("public static boolean botCycleWeapon2;", sis));
+                sis.addField(CtField.make("public static boolean botCycleBlaster;", sis));
                 sis.addMethod(CtNewMethod.make(
                                 "public static void botSelectWeaponForCycle() {}", sis));
                 sis.addField(CtField.make("public static boolean sceneScanPending;", sis));
@@ -1337,11 +1338,12 @@ public class Patcher {
                                                 "    }\n" +
                                                 "}\n" +
                                                 // Combat bot (all accounts): a firing-cycle state machine aimed at
-                                                // botFireAngle. GUN cycle = three 40ms taps 100ms apart, then a 300ms
-                                                // reload rest. BOMB cycle = charge 1100ms, release, 100ms rest. The
-                                                // whole cycle runs to completion before the tick may swap weapon (it
-                                                // is gated on botCycleActive), so the cadence is decided ONCE per
-                                                // cycle and a weapon swap can never land mid-animation. Screen is
+                                                // botFireAngle. Two cadences, latched per cycle into botCycleBlaster
+                                                // (per-slot mission_data config): Blaster = three 40ms taps 100ms
+                                                // apart, Autogun = two 40ms taps 250ms apart, both + a 150ms reload.
+                                                // The whole cycle runs to completion before the tick may swap weapon
+                                                // (it is gated on botCycleActive), so weapon AND cadence are decided
+                                                // ONCE per cycle and a swap can never land mid-animation. Screen is
                                                 // pawn-centred; button 1 is the mod's weapon-fire button.
                                                 "if (" + SOCKET_INPUT_STATE + ".isCombatBot || " + SOCKET_INPUT_STATE + ".botFireHeld) {\n" +
                                                 "    long _skCn = System.currentTimeMillis();\n" +
@@ -1386,14 +1388,15 @@ public class Patcher {
                                                 "                " + SOCKET_INPUT_STATE + ".botTapReleaseAt = _skCn + 40L;\n" +
                                                 "                " + SOCKET_INPUT_STATE + ".botCyclePhase = 1;\n" +
                                                 "            } else if (_skCph == 1) {\n" +
-                                                // PRESSED -> release after the 40ms tap. Weapon 1: 2 taps 250ms apart,
-                                                // then a 150ms reload. Gun: 3 taps 100ms apart, then a 150ms reload.
+                                                // PRESSED -> release after the 40ms tap. Cadence latched per cycle in
+                                                // botCycleBlaster (per-slot mission_data config): Autogun = 2 taps
+                                                // 250ms apart, Blaster = 3 taps 100ms apart, both + a 150ms reload.
                                                 "                if (_skCn >= " + SOCKET_INPUT_STATE + ".botTapReleaseAt) {\n" +
                                                 "                    this.__skAttackRelease(_skCx, _skCy);\n" +
                                                 "                    " + SOCKET_INPUT_STATE + ".botFireHeld = false;\n" +
                                                 "                    int _skMax; long _skInter; long _skReload;\n" +
-                                                "                    if (" + SOCKET_INPUT_STATE + ".botCycleWeapon2) { _skMax = 2; _skInter = 250L; _skReload = 150L; }\n" +
-                                                "                    else { _skMax = 3; _skInter = 100L; _skReload = 150L; }\n" +
+                                                "                    if (" + SOCKET_INPUT_STATE + ".botCycleBlaster) { _skMax = 3; _skInter = 100L; _skReload = 150L; }\n" +
+                                                "                    else { _skMax = 2; _skInter = 250L; _skReload = 150L; }\n" +
                                                 "                    " + SOCKET_INPUT_STATE + ".botTapIndex = " + SOCKET_INPUT_STATE + ".botTapIndex + 1;\n" +
                                                 "                    if (" + SOCKET_INPUT_STATE + ".botTapIndex >= _skMax) { " + SOCKET_INPUT_STATE + ".botNextTapAt = _skCn + _skReload; }\n" +
                                                 "                    else { " + SOCKET_INPUT_STATE + ".botNextTapAt = _skCn + _skInter; }\n" +
@@ -1402,7 +1405,7 @@ public class Patcher {
                                                 "            } else {\n" +
                                                 // WAITING -> fire the next tap, or end the cycle at a boundary.
                                                 "                if (_skCn >= " + SOCKET_INPUT_STATE + ".botNextTapAt) {\n" +
-                                                "                    int _skMaxT; if (" + SOCKET_INPUT_STATE + ".botCycleWeapon2) { _skMaxT = 2; } else { _skMaxT = 3; }\n" +
+                                                "                    int _skMaxT; if (" + SOCKET_INPUT_STATE + ".botCycleBlaster) { _skMaxT = 3; } else { _skMaxT = 2; }\n" +
                                                 "                    if (" + SOCKET_INPUT_STATE + ".botTapIndex >= _skMaxT) {\n" +
                                                 // Cycle done: hand back to the tick (free to re-check mode / swap now)
                                                 // and clear botFiring so it must re-grant before the next cycle.

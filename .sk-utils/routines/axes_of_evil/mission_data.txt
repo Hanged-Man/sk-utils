@@ -1,4 +1,4 @@
 axes_of_evil 1 HARD
 # boxfarm; we only run first floor. remember to equip permafrost on an alt, freeze those pesky lumbers.
-# weapon 2 (sidearm) is used against these families; weapon 1 against everything else
-2 | Construct, Slime, Undead
+1 | Blaster | Gremlin
+2 | Blaster | Construct, Slime, Undead

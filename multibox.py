@@ -247,7 +247,8 @@ FORGES_FILE = os.path.join(os.path.expanduser("~"), ".sk-utils", "forges.jsonl")
 
 def print_forge_stats():
     """Print a forge summary of ~/.sk-utils/forges.jsonl: total forges, boxes by
-    star tier, the pooled empirical box rate, and pieces fully burnt (level 10).
+    star tier, the pooled empirical box rate, the exactly-one-box forge rate, the
+    9->10 two-box forge rate, and pieces fully burnt (level 10).
 
     The box rate is POOLED across tiers on purpose: the drop chance is per forge
     and uniform across star levels (measured 2026-08-07: 3.44% pooled, every
@@ -267,6 +268,7 @@ def print_forge_stats():
 
     total = boxes_total = burnt = 0
     l9_forges = l9_boxes = 0
+    one_box = l9_two = two_box_other = 0  # exactly-1-box forges; 2-box 9->10 forges; 2+-box forges NOT at 9->10
     by_star = {}  # label -> [forges, boxes]
     for ln in lines:
         ln = ln.strip()
@@ -285,9 +287,16 @@ def print_forge_stats():
         b = int(r.get("forge_boxes") or 0)
         s[1] += b
         boxes_total += b
-        if int(r.get("level_before") or 0) == 9:
+        if b == 1:
+            one_box += 1
+        lb = int(r.get("level_before") or 0)
+        if lb == 9:
             l9_forges += 1
             l9_boxes += b
+            if b == 2:
+                l9_two += 1
+        elif b >= 2:
+            two_box_other += 1  # only the 9->10 finisher can double-drop; anything else is a log anomaly
         if int(r.get("level_after") or 0) >= 10:
             burnt += 1
 
@@ -314,9 +323,16 @@ def print_forge_stats():
         f_n, b_n = by_star[star]
         print(f"    {star}: {b_n:,} box(es) from {f_n:,} forges")
     print(f"  Box rate (pooled):  {boxes_total:,}/{total:,} = {p:.2f}%  [95% CI {lo:.2f}-{hi:.2f}%]")
+    p1, lo1, hi1 = _rate_ci(one_box, total)
+    print(f"  1-box forges:       {one_box:,}/{total:,} = {p1:.2f}%  [95% CI {lo1:.2f}-{hi1:.2f}%]")
     if l9_forges:
         p9, lo9, hi9 = _rate_ci(l9_boxes, l9_forges)
         print(f"  Box rate (9->10):   {l9_boxes:,}/{l9_forges:,} = {p9:.2f}%  [95% CI {lo9:.2f}-{hi9:.2f}%]")
+        p92, lo92, hi92 = _rate_ci(l9_two, l9_forges)
+        print(f"  2-box 9->10 forges: {l9_two:,}/{l9_forges:,} = {p92:.2f}%  [95% CI {lo92:.2f}-{hi92:.2f}%]")
+    if two_box_other:
+        print(f"  NOTE: {two_box_other:,} multi-box forge(s) logged OUTSIDE 9->10 — "
+              "the 'only the finisher can double-drop' assumption does not hold in this log")
     print(f"  Pieces burnt (L10): {burnt:,}")
     print()
 
@@ -467,7 +483,8 @@ def main():
     print("=== DATA ===")
     print("Ctrl+\\  Summarize mission_stats.jsonl in this terminal (success rate, avg runtime")
     print("        & crowns for successes, avg deaths across all runs)")
-    print("Ctrl+]  Summarize forges.jsonl in this terminal (forges, boxes by star, box rate)")
+    print("Ctrl+]  Summarize forges.jsonl in this terminal (forges, boxes by star, box rates:")
+    print("        pooled, 1-box, 9->10, 9->10 2-box)")
     print("Ctrl+U  Dump every item's display + config name to ~/.sk-utils/item_configs.txt")
     print("        (the lookup table for writing auction_watch.txt rules)")
     print()

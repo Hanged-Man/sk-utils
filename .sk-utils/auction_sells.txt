@@ -1,0 +1,14 @@
+# sk-utils auction SELLS table (Ctrl+W) — re-read on every pass, no rebuild needed.
+#
+#   <name substring> | <starting bid> | <buyout> | <listings at a time> | [stack size] | [duration]
+#
+# While the seller is ON (main only), each rule keeps <listings> auctions of its
+# item up: once ALL your live listings of that item are gone (sold/expired), it
+# lists <listings> fresh ones. Prices are PER LISTING (the whole stack); buyout 0
+# = bid-only. Stack size defaults to 1. Duration: 4h 12h 1d 2d 3d 4d 5d 6d 7d
+# (default 1d) — the listing fee scales with it.
+# A rule must match exactly ONE distinct item you hold (Ctrl+U dumps exact names).
+# Equipped gear is never listed; only FULL stacks are listed.
+# NOTE: expired unsold listings land in the AH claim box — reclaim those yourself.
+
+Mod Calibrator | 14679 | 14679 | 5 | 1 | 2d
