@@ -20,8 +20,8 @@
 
 ## -1. A little backstory and some words of warning
 
-**UPDATE: For the last time! I won't be finishing the FSC routine for autopilot,
-I won't be adding autopilot for random floor layouts, and I won't be adding Mac support.**
+**IMPORTANT: FSC autopilot routine, dungeon crawler for random arcade floors, Mac/Linux support are currently *not* planned features.**
+**At the moment this mod is *not* compatible with The Kiln's codemods -- use one or the other. I'm looking into it.**
 If there are any genuine bugs or problems with the mod *then* open an issue on the Github. 
 
 
@@ -48,7 +48,7 @@ As such, **there is *no* automatic server-side tell that you are using this mod*
 The only way you get banned is if you attract enough attention for a dev/GM to *actively tune into your botted game session*.
 *Don't* pass around ill-gotten mixmasters between your main+alts like hot potatoes, *don't* bot right after major game updates, and *don't* brag about it.
 
-**TLDR: Don't be a dummy like me and you should be fine.**
+**TLDR: Don't be a dummy and you should be fine.**
 
 ---
 
@@ -260,7 +260,7 @@ routines/
   - `1 | <Autogun or Blaster> | <families>` and `2 | <Autogun or Blaster> | <families>` —
     per-weapon-slot combat config. The families list says which monster families that weapon
     is used against; the middle token picks that slot's **firing cadence**: `Autogun` =
-    2 taps 250 ms apart, `Blaster` = 3 taps 100 ms apart (both + 150 ms reload). Ideally the
+    2 taps 250 ms apart, `Blaster` = 3 taps 80 ms apart (both + 150 ms reload). Ideally the
     two lines cover all six families (`Beast, Construct, Fiend, Gremlin, Slime, Undead`),
     but anything unlisted (or listed on **both** lines — that logs a warning) defaults to
     **weapon 1**, so only the `2` line's families actually switch weapons.

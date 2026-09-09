@@ -1339,7 +1339,7 @@ public class Patcher {
                                                 "}\n" +
                                                 // Combat bot (all accounts): a firing-cycle state machine aimed at
                                                 // botFireAngle. Two cadences, latched per cycle into botCycleBlaster
-                                                // (per-slot mission_data config): Blaster = three 40ms taps 100ms
+                                                // (per-slot mission_data config): Blaster = three 40ms taps 80ms
                                                 // apart, Autogun = two 40ms taps 250ms apart, both + a 150ms reload.
                                                 // The whole cycle runs to completion before the tick may swap weapon
                                                 // (it is gated on botCycleActive), so weapon AND cadence are decided
@@ -1390,12 +1390,12 @@ public class Patcher {
                                                 "            } else if (_skCph == 1) {\n" +
                                                 // PRESSED -> release after the 40ms tap. Cadence latched per cycle in
                                                 // botCycleBlaster (per-slot mission_data config): Autogun = 2 taps
-                                                // 250ms apart, Blaster = 3 taps 100ms apart, both + a 150ms reload.
+                                                // 250ms apart, Blaster = 3 taps 80ms apart, both + a 150ms reload.
                                                 "                if (_skCn >= " + SOCKET_INPUT_STATE + ".botTapReleaseAt) {\n" +
                                                 "                    this.__skAttackRelease(_skCx, _skCy);\n" +
                                                 "                    " + SOCKET_INPUT_STATE + ".botFireHeld = false;\n" +
                                                 "                    int _skMax; long _skInter; long _skReload;\n" +
-                                                "                    if (" + SOCKET_INPUT_STATE + ".botCycleBlaster) { _skMax = 3; _skInter = 100L; _skReload = 150L; }\n" +
+                                                "                    if (" + SOCKET_INPUT_STATE + ".botCycleBlaster) { _skMax = 3; _skInter = 80L; _skReload = 150L; }\n" +
                                                 "                    else { _skMax = 2; _skInter = 250L; _skReload = 150L; }\n" +
                                                 "                    " + SOCKET_INPUT_STATE + ".botTapIndex = " + SOCKET_INPUT_STATE + ".botTapIndex + 1;\n" +
                                                 "                    if (" + SOCKET_INPUT_STATE + ".botTapIndex >= _skMax) { " + SOCKET_INPUT_STATE + ".botNextTapAt = _skCn + _skReload; }\n" +
@@ -1424,9 +1424,11 @@ public class Patcher {
                                                 "    }\n" +
                                                 "}\n" +
                                                 // Combat bot (all accounts): hold shield (the `defend` binding) while
-                                                // an enemy bullet is within a tile; release once it clears.
-                                                "if (" + SOCKET_INPUT_STATE + ".isCombatBot) {\n" +
-                                                "    if (" + SOCKET_INPUT_STATE + ".botShieldHold) {\n" +
+                                                // an enemy bullet is within a tile; release once it clears. Gated on
+                                                // `bot ON or shield still held` so a stop that turns the bot off while
+                                                // the shield is up still releases it on the next pass.
+                                                "if (" + SOCKET_INPUT_STATE + ".isCombatBot || " + SOCKET_INPUT_STATE + ".botShieldHeld) {\n" +
+                                                "    if (" + SOCKET_INPUT_STATE + ".isCombatBot && " + SOCKET_INPUT_STATE + ".botShieldHold) {\n" +
                                                 "        this.__skShieldPress();\n" +
                                                 "        " + SOCKET_INPUT_STATE + ".botShieldHeld = true;\n" +
                                                 "    } else if (" + SOCKET_INPUT_STATE + ".botShieldHeld) {\n" +
@@ -1505,7 +1507,10 @@ public class Patcher {
                                                 // Mineral pickup tap (main + alts): while gathering and in range
                                                 // of an assigned drop, tap the attack button (LMB at screen
                                                 // centre) to collect it. The gather driver sets mineralTapActive.
-                                                "if (" + SOCKET_INPUT_STATE + ".isMineralGather) {\n" +
+                                                // Gated on `gathering OR a press still held` (like the SHOOT and KEY
+                                                // blocks) so a stop that clears the driver mid-press still releases
+                                                // the button on the next pass instead of leaving LMB down.
+                                                "if (" + SOCKET_INPUT_STATE + ".isMineralGather || " + SOCKET_INPUT_STATE + ".mineralTapHeld) {\n" +
                                                 "    long _skMn = System.currentTimeMillis();\n" +
                                                 "    try {\n" +
                                                 "        int[] _skMw = new int[1]; int[] _skMh = new int[1];\n" +
@@ -1516,7 +1521,7 @@ public class Patcher {
                                                 "        float _skMa = " + SOCKET_INPUT_STATE + ".mineralTapAngle;\n" +
                                                 "        int _skMcx = _skMw[0] / 2 + (int)(150.0f * (float)java.lang.Math.cos((double)_skMa));\n" +
                                                 "        int _skMcy = _skMh[0] / 2 - (int)(150.0f * (float)java.lang.Math.sin((double)_skMa));\n" +
-                                                "        if (" + SOCKET_INPUT_STATE + ".mineralTapActive) {\n" +
+                                                "        if (" + SOCKET_INPUT_STATE + ".isMineralGather && " + SOCKET_INPUT_STATE + ".mineralTapActive) {\n" +
                                                 "            if (" + SOCKET_INPUT_STATE + ".mineralTapHeld) {\n" +
                                                 "                if (_skMn >= " + SOCKET_INPUT_STATE + ".mineralTapReleaseAt) {\n" +
                                                 "                    this.__skAttackRelease(_skMcx, _skMcy);\n" +

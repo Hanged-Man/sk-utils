@@ -157,7 +157,7 @@ public final class SocketInputState {
     public static volatile boolean botFireHeld = false; // poll has the fire button pressed
     public static volatile long botTapReleaseAt = 0L;   // when to release the current press
     public static volatile long botNextTapAt = 0L;      // when the current wait/rest ends
-    // Firing-cycle state machine (poll-owned). A whole cycle — 3 taps 100ms apart
+    // Firing-cycle state machine (poll-owned). A whole cycle — 3 taps 80ms apart
     // + 150ms reload for the gun (weapon 2), or 2 taps 250ms apart + 150ms reload
     // for weapon 1 — runs to completion, and the tick is forbidden from changing
     // weapon/mode while botCycleActive is true, so a swap never lands mid-animation.
@@ -212,7 +212,7 @@ public final class SocketInputState {
     //     2 | <Autogun|Blaster> | <families weapon 2 handles>
     //
     // The cadence token is optional (absent → slot 1 Autogun, slot 2 Blaster):
-    // Autogun = 2 taps 250ms apart, Blaster = 3 taps 100ms apart (both 40ms
+    // Autogun = 2 taps 250ms apart, Blaster = 3 taps 80ms apart (both 40ms
     // holds + a 150ms reload; timings inline in the Patcher poll block). The
     // "1" line's families are explicit weapon-1 assignments — same as the
     // default for unlisted families, but a family on BOTH lines logs a warning
@@ -242,7 +242,7 @@ public final class SocketInputState {
     private static final long BOT_WEAPON_SWITCH_MS = 400L;  // periodic same-slot re-assert
     private static final long BOT_WEAPON_SETTLE_MS = 300L;  // fire hold after a switch
     // Cycle timings live inline in the Patcher poll block, keyed on the latched
-    // botCycleBlaster: Blaster cadence = 3 taps of 40ms held / 100ms apart,
+    // botCycleBlaster: Blaster cadence = 3 taps of 40ms held / 80ms apart,
     // Autogun cadence = 2 taps of 40ms held / 250ms apart, both then a 150ms
     // reload. Kept there because the poll (a separate class) cannot read
     // SocketInputState's private constants.
@@ -1257,20 +1257,7 @@ public final class SocketInputState {
                         autoAdvanceOn = false;
                         broadcast("AUTOADVANCE 0");
                         campaignRestartPending = false; // cancel any pending endless-cycle relaunch
-                        isRoutineActive = false;
-                        isCombatBot = false;
-                        isLootMode = false;
-                        routineShootActive = false;
-                        blockClearActive = false;
-                        isMineralGather = false;
-                        mineralTapActive = false;
-                        routineBroadcastCombat(false); // stop the alts' combat bots
-                        routineBroadcastBreadcrumb(false); // back to naive auto-follow
-                        broadcast("MINERALGATHER 0");
-                        broadcast("SHOOTALT off"); // stop any alt SHOOT firing
-                        releaseShieldBump(); // drop any shield raised for a bump
-                        snarbyStop(); // clear SNARBY state + drop the alts' sustained shield
-                        clearMovementKeys();
+                        routineStopCleanup();
                         debugFile("[routine] STOP");
                     }
                     continue;
@@ -8673,10 +8660,20 @@ public final class SocketInputState {
         }
     }
 
-    /** Stops the running routine and clears all combat/loot/shield/mineral state (main + alts). */
+    /**
+     * Stops the running routine and RELEASES EVERY INPUT the mod holds — the main's
+     * cursor park, attack, shield and movement keys, and every keyboard command the
+     * alts are holding on the main's behalf — then clears all combat/loot/shield/
+     * mineral state (main + alts). THE single stop path: Ctrl+R off, campaignAbort and
+     * routineFinish all come through here, so a release added here covers all three.
+     * Poll-owned *Held flags are deliberately NOT touched: each poll block releases a
+     * held press/shield itself on the next pass once its driver flag is cleared.
+     */
     private static void routineStopCleanup() {
         isRoutineActive = false;
         isCombatBot = false;
+        botFiring = false;       // main's combat bot: no further firing-cycle grants
+        botShieldHold = false;   // main's combat shield driver (the poll releases a held one)
         spriteAimedRequest = false; // a pending auto-fire must not survive the run
         spriteBurstLeft = 0; // nor a re-press burst (an in-flight press just single-fires)
         chaseReset();
@@ -8686,10 +8683,12 @@ public final class SocketInputState {
         pinHoldActive = false;      // ditto an open PIN_MOVETO scope
         isLootMode = false;
         routineShootActive = false;
+        pickupAimActive = false;    // the cursor park (GATE/ALCH_CHARGE/KEY steps) — the Ctrl+R cursor-lock fix
+        keyTapFire = false;         // a QUEUED one-shot tap must not fire after the stop (a held one still releases)
+        keyTapHoldMs = KEY_TAP_HOLD_DEFAULT_MS; // ALCH_CHARGE's 1.6s charge hold must not leak into later taps
         blockClearActive = false;
         isMineralGather = false;
         mineralTapActive = false;
-        pickupAimActive = false;
         broadcast("MINERALGATHER 0");
         routineBroadcastCombat(false); // stop the alts' combat bots
         routineBroadcastBreadcrumb(false); // back to naive auto-follow
@@ -8698,6 +8697,12 @@ public final class SocketInputState {
         broadcast("PRECISEGATHER off"); // release any alt precision gather
         preciseGatherOn = false;
         snarbyStop(); // clear SNARBY state + drop the alts' sustained shield
+        routineShieldHold = false; // any routine shield hold the helpers above didn't own
+        // Belt and braces for the alts' KEYBOARD: the helpers above only release what
+        // THEY tracked. Send the two held-key releases unconditionally — both alt
+        // handlers are idempotent (a release request with nothing held is a no-op).
+        broadcast("SHIELD 0");
+        broadcast("DASH 0");
         WheelDodge.reset(); // a run's wheel tracks must not survive into the next lobby/floor
         clearMovementKeys();
         lobbyBugSince = 0L; // fresh lobby-join-bug timer for the next floor/mission
